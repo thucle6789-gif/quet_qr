@@ -27,7 +27,7 @@ st.subheader("📸 Máy quét bằng Camera Hệ thống")
 if "qr_code_detected" not in st.session_state:
     st.session_state.qr_code_detected = ""
 
-# ĐÂY LÀ MẸO: Sử dụng file_uploader cấu hình chụp ảnh bằng camera sau của hệ thống
+# Sử dụng file_uploader cấu hình chụp ảnh bằng camera sau của hệ thống
 uploaded_file = st.file_uploader(
     "▶️ BẤM VÀO ĐÂY ĐỂ MỞ CAMERA HỆ THỐNG CHỤP MÃ QR", 
     type=["jpg", "jpeg", "png"],
@@ -35,7 +35,7 @@ uploaded_file = st.file_uploader(
     label_visibility="visible"
 )
 
-# Xử lý ngay sau khi người dùng chụp xong và bấm "Dùng ảnh" (Sử dụng ảnh)
+# Xử lý ngay sau khi người dùng chụp xong và bấm "Dùng ảnh"
 if uploaded_file is not None:
     try:
         # Đọc ảnh vừa chụp vào OpenCV
@@ -59,13 +59,28 @@ st.markdown("---")
 # --- KHU VỰC FORM ĐIỀN THÔNG TIN ---
 st.subheader("📝 Thông tin bản ghi")
 
+# Danh sách các công đoạn bạn yêu cầu để làm Dropdown
+DANH_SACH_CONG_DOAN = [
+    "P013_Tạo phôi và Sơchế",
+    "P014_Tinh chế và Định hình",
+    "P015_Chà nhám và Bề mặt",
+    "P016_Lắp ráp và Liên kết",
+    "P017_Làm nguội và Hoàn thiện",
+    "P018_Sơn - Màu",
+    "P019_Washing - Cleaning",
+    "P20_Lắp ráp hoàn thiện",
+    "P021_Đóng gói hoàn thành"
+]
+
 with st.form(key="factory_data_form", clear_on_submit=False):
     col1, col2 = st.columns(2)
     
     with col1:
         # Trường Headcode tự động điền từ QR, hoặc có thể gõ tay
         headcode = st.text_input("Headcode *", value=st.session_state.qr_code_detected)
-        congdoan = st.text_input("Công đoạn")
+        
+        # CHUYỂN THÀNH DROPDOWN: Sử dụng st.selectbox thay cho st.text_input
+        congdoan = st.selectbox("Công đoạn", options=DANH_SACH_CONG_DOAN)
         
     with col2:
         soluong = st.number_input("Số lượng", min_value=1, value=1, step=1)
@@ -83,7 +98,7 @@ if submit_button:
         payload = {
             "headcode": headcode,
             "soluong": int(soluong),
-            "congdoan": congdoan,
+            "congdoan": congdoan,  # Giá trị được chọn từ danh sách dropdown sẽ gửi lên đây
             "nguoibao": nguoibao
         }
         
@@ -93,6 +108,7 @@ if submit_button:
                 if response.status_code == 200:
                     st.success(f"🎉 Đã lưu thành công dữ liệu cho Headcode: {headcode}!")
                     st.session_state.qr_code_detected = "" # Đặt lại rỗng cho lượt tiếp theo
+                    st.rerun() # Làm mới trang để cập nhật giao diện sạch sẽ
                 else:
                     st.error(f"Lỗi phản hồi từ máy chủ (Mã lỗi: {response.status_code})")
             except Exception as e:
