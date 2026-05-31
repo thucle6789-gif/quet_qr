@@ -5,7 +5,7 @@ import numpy as np
 from PIL import Image
 
 # 1. Điền đường link Web App URL Google Apps Script của bạn vào đây
-WEB_APP_URL = "DÁN_ĐƯỜNG_LINK_WEB_APP_URL_CỦA_BẠN_VÀO_ĐÂY"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxB9cagxYoxM8kpbLtkFGKoQ6SND4QNqLbPTwFR1fs0bNUH-KNDFSaYtrTxKJ8VadEv8g/exec"
 
 st.set_page_config(page_title="Quét QR Code Hệ Thống", layout="centered")
 
