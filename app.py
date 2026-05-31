@@ -66,12 +66,22 @@ if uploaded_file is not None:
         data, bbox, _ = detector.detectAndDecode(opencv_img)
 
         if data:
-            st.session_state.qr_code_detected = data
-            st.success(f"✅ Đã nhận diện thành công Headcode: {data}")
+            # ✅ Chỉ tăng form_key khi QR mới khác với QR hiện tại
+            # để tránh vòng lặp rerun vô tận
+            if data != st.session_state.qr_code_detected:
+                st.session_state.qr_code_detected = data
+                st.session_state.form_key += 1  # ✅ Tăng key => headcode widget render lại với giá trị mới
+                st.rerun()
+            else:
+                st.success(f"✅ Đã nhận diện thành công Headcode: {data}")
         else:
             st.error("❌ Không tìm thấy mã QR trong bức ảnh vừa chụp. Vui lòng chụp rõ nét hơn!")
     except Exception as e:
         st.error(f"Lỗi xử lý hình ảnh: {e}")
+
+# ✅ Hiển thị thông báo thành công sau khi rerun (nếu đã có QR)
+if st.session_state.qr_code_detected:
+    st.success(f"✅ Đã nhận diện thành công Headcode: {st.session_state.qr_code_detected}")
 
 st.markdown("---")
 
