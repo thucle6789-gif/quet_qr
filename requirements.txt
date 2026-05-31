@@ -1,6 +1,5 @@
 streamlit
 requests
-pillow
 numpy
 opencv-python-headless
-streamlit-camera-input-live
+streamlit-webrtc
