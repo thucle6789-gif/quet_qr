@@ -5,68 +5,54 @@ import numpy as np
 from PIL import Image
 
 # 1. Điền đường link Web App URL Google Apps Script của bạn vào đây
-WEB_APP_URL = "DÁN_ĐƯỜNG_LINK_WEB_APP_URL_CỦA_BẠN_VÀO_ĐÂY"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxB9cagxYoxM8kpbLtkFGKoQ6SND4QNqLbPTwFR1fs0bNUH-KNDFSaYtrTxKJ8VadEv8g/exec"
 
-st.set_page_config(page_title="Quét QR Code Tối Ưu", layout="centered")
+st.set_page_config(page_title="Quét QR Code Hệ Thống", layout="centered")
 
 st.markdown("""
     <style>
     .main-title { text-align: center; font-family: Arial, sans-serif; font-weight: bold; color: #1E1E1E; margin-bottom: 20px; }
-    /* Tùy biến khung camera gốc của Streamlit cho đẹp hơn */
-    div[data-testid="stCameraInput"] {
-        border: 6px solid #222222;
-        border-radius: 16px;
-        overflow: hidden;
-        box-shadow: 0px 6px 12px rgba(0,0,0,0.15);
+    /* Giấu phần khung kéo thả file mặc định của Streamlit để trông giống nút bấm hơn */
+    div[data-testid="stFileUploaderDropzone"] {
+        padding: 10px !important;
     }
     </style>
 """, unsafe_allow_html=True)
 
 st.markdown("<h1 class='main-title'>Quét QR Code & Nhập Dữ Liệu</h1>", unsafe_allow_html=True)
 
-# --- KHỞI TẠO BIẾN TRẠNG THÁI (SESSION STATE) ---
+st.subheader("📸 Máy quét bằng Camera Hệ thống")
+
+# Khởi tạo biến lưu trữ dữ liệu QR quét được trong phiên làm việc
 if "qr_code_detected" not in st.session_state:
-    st.session_state.qr_code_detected = ""  # Lưu chuỗi QR quét được
-if "show_camera" not in st.session_state:
-    st.session_state.show_camera = False    # Trạng thái ẩn/hiện camera
+    st.session_state.qr_code_detected = ""
 
-st.subheader("📸 Máy quét QR Code")
+# ĐÂY LÀ MẸO: Sử dụng file_uploader cấu hình chụp ảnh bằng camera sau của hệ thống
+uploaded_file = st.file_uploader(
+    "▶️ BẤM VÀO ĐÂY ĐỂ MỞ CAMERA HỆ THỐNG CHỤP MÃ QR", 
+    type=["jpg", "jpeg", "png"],
+    accept_multiple_files=False,
+    label_visibility="visible"
+)
 
-# BƯỚC 1: Nếu trạng thái hiển thị camera là SAI -> Hiện nút bấm để MỞ
-if not st.session_state.show_camera:
-    if st.button("▶️ MỞ CAMERA ĐỂ QUẾT QR", use_container_width=True, type="primary"):
-        st.session_state.show_camera = True
-        st.session_state.qr_code_detected = "" # Xóa dữ liệu cũ để quét mới
-        st.rerun()
-
-# BƯỚC 2: Nếu trạng thái hiển thị camera là ĐÚNG -> Mở khung camera của Streamlit
-else:
-    if st.button("❌ HỦY QUẾT / TẮT CAMERA", use_container_width=True):
-        st.session_state.show_camera = False
-        st.rerun()
-
-    # Dùng camera_input gốc, cực kỳ ổn định, tự động tối ưu camera sau trên điện thoại
-    img_file_buffer = st.camera_input("Hãy đưa mã QR vào chính giữa khung hình và bấm nút chụp")
-
-    if img_file_buffer is not None:
-        try:
-            # Đọc ảnh từ bộ nhớ buffer sang OpenCV để giải mã
-            file_bytes = np.asarray(bytearray(img_file_buffer.read()), dtype=np.uint8)
-            opencv_img = cv2.imdecode(file_bytes, 1)
-            
-            # Sử dụng bộ quét QR của OpenCV
-            detector = cv2.QRCodeDetector()
-            data, bbox, _ = detector.detectAndDecode(opencv_img)
-            
-            if data:
-                st.session_state.qr_code_detected = data # Điền vào ô nhập liệu
-                st.session_state.show_camera = False    # TỰ ĐỘNG TẮT CAMERA BIẾN MẤT
-                st.toast("Quét mã QR thành công!", icon="✅")
-                st.rerun() # Tải lại trang để áp dụng ẩn camera ngay lập tức
-            else:
-                st.error("❌ Ảnh chụp không rõ hoặc không có mã QR. Vui lòng căn nét thẳng góc và chụp lại!")
-        except Exception as e:
-            st.error(f"Lỗi xử lý hình ảnh: {e}")
+# Xử lý ngay sau khi người dùng chụp xong và bấm "Dùng ảnh" (Sử dụng ảnh)
+if uploaded_file is not None:
+    try:
+        # Đọc ảnh vừa chụp vào OpenCV
+        file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
+        opencv_img = cv2.imdecode(file_bytes, 1)
+        
+        # Sử dụng bộ quét QR của OpenCV để giải mã
+        detector = cv2.QRCodeDetector()
+        data, bbox, _ = detector.detectAndDecode(opencv_img)
+        
+        if data:
+            st.session_state.qr_code_detected = data
+            st.success(f"✅ Đã nhận diện thành công Headcode từ camera: {data}")
+        else:
+            st.error("❌ Ứng dụng không tìm thấy mã QR trong bức ảnh vừa chụp. Vui lòng bấm mở lại camera và chụp rõ nét hơn!")
+    except Exception as e:
+        st.error(f"Lỗi xử lý hình ảnh: {e}")
 
 st.markdown("---")
 
@@ -90,7 +76,7 @@ with st.form(key="factory_data_form", clear_on_submit=False):
 # --- XỬ LÝ GỬI DỮ LIỆU ---
 if submit_button:
     if not headcode:
-        st.error("Trường 'Headcode' đang trống. Vui lòng bật camera để quét hoặc điền tay.")
+        st.error("Trường 'Headcode' đang trống. Vui lòng mở camera chụp QR hoặc điền tay.")
     elif not nguoibao:
         st.error("Vui lòng điền thông tin 'Người báo'.")
     else:
