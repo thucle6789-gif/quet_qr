@@ -3,116 +3,97 @@ import requests
 from PIL import Image
 import cv2
 import numpy as np
+from camera_input_live import camera_input_live
 
 # 1. Điền đường link Web App URL Google Apps Script của bạn vào đây
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxB9cagxYoxM8kpbLtkFGKoQ6SND4QNqLbPTwFR1fs0bNUH-KNDFSaYtrTxKJ8VadEv8g/exec"
+WEB_APP_URL = "DÁN_ĐƯỜNG_LINK_WEB_APP_URL_CỦA_BẠN_VÀO_ĐÂY"
 
-# Cấu hình giao diện trang web
-st.set_page_config(page_title="Quét QR Code & Nhập Dữ Liệu", layout="centered")
+st.set_page_config(page_title="Quét QR Code Tối Ưu", layout="centered")
 
-# Nhúng mã CSS tùy biến giao diện camera giống một chiếc máy ảnh chuyên dụng
+# Nhúng CSS làm đẹp giao diện
 st.markdown("""
     <style>
-    /* Làm đẹp tiêu đề chính */
-    .main-title {
-        text-align: center;
-        font-family: 'Helvetica Neue', Arial, sans-serif;
-        font-weight: bold;
-        color: #1E1E1E;
-        margin-bottom: 20px;
-    }
-    /* Tạo khung viền giống máy quét cho khu vực Camera */
-    div[data-testid="stCameraInput"] {
-        border: 8px solid #222222;
-        border-radius: 20px;
-        padding: 10px;
-        background-color: #151515;
-        box-shadow: 0px 8px 16px rgba(0,0,0,0.3);
-    }
-    /* Tùy biến nút bấm Chụp (Quét) của Streamlit thành màu đỏ nổi bật */
-    div[data-testid="stCameraInput"] button {
-        background-color: #DC3545 !important;
-        color: white !important;
-        font-weight: bold !important;
-        font-size: 18px !important;
-        border-radius: 50px !important;
-        padding: 10px 24px !important;
-        border: 3px solid #FFFFFF !important;
-        box-shadow: 0px 4px 10px rgba(0,0,0,0.3) !important;
-        text-transform: uppercase;
-    }
-    div[data-testid="stCameraInput"] button:hover {
-        background-color: #C82333 !important;
-        cursor: pointer;
-    }
+    .main-title { text-align: center; font-family: Arial, sans-serif; font-weight: bold; color: #1E1E1E; margin-bottom: 20px; }
+    /* Khung viền bao quanh camera trực tuyến */
+    .camera-box { border: 6px solid #222222; border-radius: 16px; overflow: hidden; background-color: #000; margin-bottom: 15px; }
     </style>
 """, unsafe_allow_html=True)
 
 st.markdown("<h1 class='main-title'>Quét QR Code & Nhập Dữ Liệu</h1>", unsafe_allow_html=True)
 
-# --- KHU VỰC MÁY QUẾT CAMERA ---
-st.subheader("📸 Ống kính Máy quét")
-
-# Khởi tạo biến lưu trữ dữ liệu QR quét được trong phiên làm việc
+# --- KHỞI TẠO CÁC BIẾN TRẠNG THÁI (SESSION STATE) ---
+if "camera_on" not in st.session_state:
+    st.session_state.camera_on = False  # Trạng thái bật/tắt camera
 if "qr_code_detected" not in st.session_state:
-    st.session_state.qr_code_detected = ""
+    st.session_state.qr_code_detected = ""  # Lưu chuỗi QR quét được
 
-# Giao diện camera tích hợp nút chụp
-img_file_buffer = st.camera_input("Đưa mã QR vào khung hình và bấm nút QUÉT phía dưới")
+# --- KHU VỰC ĐIỀU KHIỂN CAMERA ---
+st.subheader("📸 Máy quét QR Code")
 
-# Xử lý hình ảnh bằng OpenCV khi người dùng bấm nút chụp (Nút màu đỏ)
-if img_file_buffer is not None:
-    try:
-        # Chuyển đổi dữ liệu ảnh buffer sang dạng định dạng mà OpenCV có thể đọc được
-        file_bytes = np.asarray(bytearray(img_file_buffer.read()), dtype=np.uint8)
-        opencv_img = cv2.imdecode(file_bytes, 1)
+# Nếu camera đang tắt, hiển thị nút bấm để mở
+if not st.session_state.camera_on:
+    if st.button("▶️ MỞ CAMERA ĐỂ QUẾT QR", use_container_width=True, type="primary"):
+        st.session_state.camera_on = True
+        st.session_state.qr_code_detected = "" # Xóa dữ liệu cũ khi quét mới
+        st.rerun()
+
+# Nếu camera đang bật, tiến hành live stream hình ảnh và tự động nhận diện QR
+else:
+    # Nút bấm thủ công nếu muốn tắt camera giữa chừng mà không quét nữa
+    if st.button("❌ TẮT CAMERA", use_container_width=True):
+        st.session_state.camera_on = False
+        st.rerun()
         
-        # Khởi tạo bộ dò mã QR tích hợp sẵn trong OpenCV (Không cần thư viện ngoài zbar)
-        detector = cv2.QRCodeDetector()
-        
-        # Tiến hành giải mã hình ảnh
-        data, bbox, straight_qrcode = detector.detectAndDecode(opencv_img)
-        
-        if data:
-            st.session_state.qr_code_detected = data
-            st.toast("Quét mã thành công!", icon="✅")
-        else:
-            st.error("❌ Không tìm thấy mã QR nào trong ảnh chụp. Vui lòng căn giữa thẳng góc và bấm QUÉT lại!")
-    except Exception as e:
-        st.warning("Hệ thống camera đang sẵn sàng. Hãy bấm nút màu đỏ để quét.")
+    st.markdown('<div class="camera-box">', unsafe_allow_html=True)
+    # Thành phần camera_input_live sẽ liên tục trả về hình ảnh từ luồng video mà không bắt bấm chụp
+    jpeg_image = camera_input_live(debounce=200) # Đọc ảnh mỗi 200 mili-giây
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    if jpeg_image is not None:
+        try:
+            # Đọc hình ảnh luồng trực tiếp sang OpenCV
+            file_bytes = np.asarray(bytearray(jpeg_image.read()), dtype=np.uint8)
+            opencv_img = cv2.imdecode(file_bytes, 1)
+            
+            # Giải mã QR bằng bộ xử lý OpenCV
+            detector = cv2.QRCodeDetector()
+            data, bbox, straight_qrcode = detector.detectAndDecode(opencv_img)
+            
+            # KHI NHẬN ĐƯỢC QR CODE THÀNH CÔNG
+            if data:
+                st.session_state.qr_code_detected = data # Lưu dữ liệu vào ô nhập liệu
+                st.session_state.camera_on = False       # TỰ ĐỘNG THOÁT CAMERA
+                st.toast("Quét thành công! Đang đóng camera...", icon="✅")
+                st.rerun() # Tải lại trang để áp dụng tắt camera và điền dữ liệu
+        except Exception as e:
+            pass
 
 st.markdown("---")
 
 # --- KHU VỰC FORM ĐIỀN THÔNG TIN ---
 st.subheader("📝 Thông tin bản ghi")
 
-# Tạo form nhập liệu xếp gọn gàng theo hàng/cột
 with st.form(key="factory_data_form", clear_on_submit=False):
-    
-    # Chia form thành 2 cột cân đối
     col1, col2 = st.columns(2)
     
     with col1:
-        # Trường Headcode tự động điền giá trị vừa quét được từ QR, người dùng vẫn có thể nhập tay
-        headcode = st.text_input("Headcode *", value=st.session_state.qr_code_detected, help="Tự động điền sau khi bấm nút quét trên camera")
+        # Trường Headcode tự động nhận diện từ QR, hoặc nhập tay bình thường
+        headcode = st.text_input("Headcode *", value=st.session_state.qr_code_detected)
         congdoan = st.text_input("Công đoạn")
         
     with col2:
-        # Trường Số lượng mặc định số nguyên bằng 1
         soluong = st.number_input("Số lượng", min_value=1, value=1, step=1)
         nguoibao = st.text_input("Người báo")
 
-    # Nút bấm gửi dữ liệu đồng bộ lên Google Sheet đặt ở cuối form
     submit_button = st.form_submit_button(label="💾 Gửi dữ liệu lên Google Sheet", use_container_width=True)
 
-# --- XỬ LÝ KHI BẤM NÚT GỬI ---
+# --- XỬ LÝ GỬI DỮ LIỆU ---
 if submit_button:
     if not headcode:
-        st.error("Trường 'Headcode' đang trống. Vui lòng quét QR hoặc nhập tay.")
+        st.error("Trường 'Headcode' đang trống. Vui lòng bật camera để quét hoặc điền tay.")
     elif not nguoibao:
-        st.error("Vui lòng điền thông tin 'Người báo' trước khi gửi.")
+        st.error("Vui lòng điền thông tin 'Người báo'.")
     else:
-        # Tạo cấu trúc JSON đóng gói gửi đi
         payload = {
             "headcode": headcode,
             "soluong": int(soluong),
@@ -122,14 +103,11 @@ if submit_button:
         
         with st.spinner("Đang truyền dữ liệu về hệ thống bảng tính..."):
             try:
-                # Thực hiện lệnh POST gửi dữ liệu tới Web App URL (Apps Script)
                 response = requests.post(WEB_APP_URL, json=payload)
-                
                 if response.status_code == 200:
-                    st.success(f"🎉 Đã lưu thành công dữ liệu cho Headcode: {headcode} vào hàng tiếp theo!")
-                    # Xóa bộ nhớ tạm của mã QR cũ để sẵn sàng cho lượt quét tiếp theo
-                    st.session_state.qr_code_detected = "" 
+                    st.success(f"🎉 Đã lưu thành công dữ liệu cho Headcode: {headcode}!")
+                    st.session_state.qr_code_detected = "" # Clear để chuẩn bị cho lần sau
                 else:
-                    st.error(f"Gặp sự cố phản hồi từ máy chủ Google (Mã lỗi: {response.status_code})")
+                    st.error(f"Lỗi phản hồi từ máy chủ (Mã lỗi: {response.status_code})")
             except Exception as e:
-                st.error(f"Không thể kết nối. Vui lòng kiểm tra lại mạng hoặc link Web App URL. Lỗi: {e}")
+                st.error(f"Lỗi kết nối: {e}")
