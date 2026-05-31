@@ -1,15 +1,16 @@
 import streamlit as st
 import requests
 from PIL import Image
-from pyzbar.pyzbar import decode
+import cv2
+import numpy as np
 
-# 1. Thay thế bằng đường link Web App URL Google Apps Script của bạn
-WEB_APP_URL = "DÁN_ĐƯỜNG_LINK_WEB_APP_URL_CỦA_BẠN_VÀO_ĐÂY"
+# 1. Điền đường link Web App URL Google Apps Script của bạn vào đây
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxB9cagxYoxM8kpbLtkFGKoQ6SND4QNqLbPTwFR1fs0bNUH-KNDFSaYtrTxKJ8VadEv8g/exec"
 
-# Cấu hình trang web mượt mà
+# Cấu hình giao diện trang web
 st.set_page_config(page_title="Quét QR Code & Nhập Dữ Liệu", layout="centered")
 
-# Nhúng mã CSS tùy biến giao diện giống chiếc máy ảnh
+# Nhúng mã CSS tùy biến giao diện camera giống một chiếc máy ảnh chuyên dụng
 st.markdown("""
     <style>
     /* Làm đẹp tiêu đề chính */
@@ -59,21 +60,24 @@ if "qr_code_detected" not in st.session_state:
 # Giao diện camera tích hợp nút chụp
 img_file_buffer = st.camera_input("Đưa mã QR vào khung hình và bấm nút QUÉT phía dưới")
 
-# Xử lý hình ảnh khi người dùng bấm nút chụp (Nút màu đỏ)
+# Xử lý hình ảnh bằng OpenCV khi người dùng bấm nút chụp (Nút màu đỏ)
 if img_file_buffer is not None:
     try:
-        # Mở hình ảnh thu được từ camera
-        img = Image.open(img_file_buffer)
+        # Chuyển đổi dữ liệu ảnh buffer sang dạng định dạng mà OpenCV có thể đọc được
+        file_bytes = np.asarray(bytearray(img_file_buffer.read()), dtype=np.uint8)
+        opencv_img = cv2.imdecode(file_bytes, 1)
         
-        # Giải mã tìm QR code bằng thư viện pyzbar
-        detected_barcodes = decode(img)
+        # Khởi tạo bộ dò mã QR tích hợp sẵn trong OpenCV (Không cần thư viện ngoài zbar)
+        detector = cv2.QRCodeDetector()
         
-        if detected_barcodes:
-            # Lấy chuỗi văn bản trong QR code tìm thấy đầu tiên
-            st.session_state.qr_code_detected = detected_barcodes[0].data.decode("utf-8")
-            st.toast(" Quét mã thành công!", icon="✅")
+        # Tiến hành giải mã hình ảnh
+        data, bbox, straight_qrcode = detector.detectAndDecode(opencv_img)
+        
+        if data:
+            st.session_state.qr_code_detected = data
+            st.toast("Quét mã thành công!", icon="✅")
         else:
-            st.error("❌ Không tìm thấy mã QR nào trong ảnh chụp. Vui lòng căn giữa khung hình và thử lại!")
+            st.error("❌ Không tìm thấy mã QR nào trong ảnh chụp. Vui lòng căn giữa thẳng góc và bấm QUÉT lại!")
     except Exception as e:
         st.warning("Hệ thống camera đang sẵn sàng. Hãy bấm nút màu đỏ để quét.")
 
@@ -85,11 +89,11 @@ st.subheader("📝 Thông tin bản ghi")
 # Tạo form nhập liệu xếp gọn gàng theo hàng/cột
 with st.form(key="factory_data_form", clear_on_submit=False):
     
-    # Chia form thành 2 cột cho giống mẫu ảnh thiết kế của bạn
+    # Chia form thành 2 cột cân đối
     col1, col2 = st.columns(2)
     
     with col1:
-        # Trường Headcode tự động điền giá trị vừa quét được từ QR, người dùng vẫn có thể sửa tay nếu muốn
+        # Trường Headcode tự động điền giá trị vừa quét được từ QR, người dùng vẫn có thể nhập tay
         headcode = st.text_input("Headcode *", value=st.session_state.qr_code_detected, help="Tự động điền sau khi bấm nút quét trên camera")
         congdoan = st.text_input("Công đoạn")
         
