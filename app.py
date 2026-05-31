@@ -22,13 +22,9 @@ st.markdown("<h1 class='main-title'>Quét QR Code & Nhập Dữ Liệu</h1>", un
 
 st.subheader("📸 Máy quét bằng Camera Hệ thống")
 
-# --- KHỞI TẠO CÁC BIẾN LƯU TRỮ TRẠNG THÁI FORM (SESSION STATE) ---
+# --- KHỞI TẠO CÁC BIẾN LƯU TRỮ TRẠNG THÁI (SESSION STATE) ---
 if "qr_code_detected" not in st.session_state:
     st.session_state.qr_code_detected = ""
-if "soluong_val" not in st.session_state:
-    st.session_state.soluong_val = 1.000   # Mặc định ban đầu là dạng số lẻ
-if "nguoibao_val" not in st.session_state:
-    st.session_state.nguoibao_val = ""
 
 # Thiết lập bộ upload ảnh từ camera hệ thống
 uploaded_file = st.file_uploader(
@@ -72,29 +68,54 @@ DANH_SACH_CONG_DOAN = [
     "P021_Đóng gói hoàn thành"
 ]
 
-# Sử dụng st.form để bọc các ô nhập liệu
+# Định nghĩa hàm reset form khi gửi thành công
+def clear_form_data():
+    # Xóa dữ liệu mã QR đã quét
+    st.session_state.qr_code_detected = ""
+    
+    # Xóa trực tiếp trạng thái các ô nhập liệu thông qua key của chúng
+    if "input_headcode" in st.session_state:
+        st.session_state.input_headcode = ""
+    if "input_soluong" in st.session_state:
+        st.session_state.input_soluong = 1.000  # Trả về giá trị mặc định ban đầu
+    if "input_nguoibao" in st.session_state:
+        st.session_state.input_nguoibao = ""
+    # Đặt lại công đoạn về lựa chọn đầu tiên
+    if "input_congdoan" in st.session_state:
+        st.session_state.input_congdoan = DANH_SACH_CONG_DOAN[0]
+
+# Sử dụng st.form để bao bọc các ô nhập liệu
 with st.form(key="factory_data_form", clear_on_submit=False):
     col1, col2 = st.columns(2)
     
     with col1:
-        # Nhận giá trị Headcode từ bộ nhớ tạm session_state
-        headcode = st.text_input("Headcode *", value=st.session_state.qr_code_detected)
+        # Bổ sung tham số key để Streamlit quản lý việc xóa dữ liệu chính xác
+        headcode = st.text_input(
+            "Headcode *", 
+            value=st.session_state.qr_code_detected, 
+            key="input_headcode"
+        )
         
-        # Danh sách chọn công đoạn
-        congdoan = st.selectbox("Công đoạn", options=DANH_SACH_CONG_DOAN)
+        congdoan = st.selectbox(
+            "Công đoạn", 
+            options=DANH_SACH_CONG_DOAN, 
+            key="input_congdoan"
+        )
         
     with col2:
-        # CẢI TIẾN SỐ LƯỢNG: Đổi sang định dạng số thực (float), định dạng hiển thị 3 chữ số thập phân (%.3f)
         soluong = st.number_input(
             "Số lượng", 
             min_value=0.000, 
-            value=st.session_state.soluong_val, 
+            value=1.000, 
             step=0.001, 
-            format="%.3f"
+            format="%.3f",
+            key="input_soluong"
         )
         
-        # Nhận giá trị Người báo từ bộ nhớ tạm session_state
-        nguoibao = st.text_input("Người báo", value=st.session_state.nguoibao_val)
+        nguoibao = st.text_input(
+            "Người báo", 
+            key="input_input_nguoibao" # Đặt key riêng biệt cho ô Người báo
+        )
 
     submit_button = st.form_submit_button(label="💾 Gửi dữ liệu lên Google Sheet", use_container_width=True)
 
@@ -105,7 +126,6 @@ if submit_button:
     elif not nguoibao:
         st.error("Vui lòng điền thông tin 'Người báo'.")
     else:
-        # Giữ nguyên giá trị float của số lượng để truyền đi
         payload = {
             "headcode": headcode,
             "soluong": float(soluong),
@@ -117,15 +137,14 @@ if submit_button:
             try:
                 response = requests.post(WEB_APP_URL, json=payload)
                 if response.status_code == 200:
-                    # 1. Hiển thị thông báo đúng yêu cầu của bạn
+                    # 1. Gọi hàm dọn sạch tất cả dữ liệu trong Session State
+                    clear_form_data()
+                    
+                    # 2. Hiển thị thông báo thành công dạng thông báo đẩy (Không bị mất khi reload)
+                    st.toast("🎉 Đã up dữ liệu thành công", icon="✅")
                     st.success("🎉 Đã up dữ liệu thành công")
                     
-                    # 2. XÓA DỮ LIỆU ĐỂ TRẢ VỀ FORM TRỐNG HOÀN TOÀN
-                    st.session_state.qr_code_detected = ""  # Xóa sạch Headcode
-                    st.session_state.soluong_val = 1.000     # Trả số lượng về mặc định
-                    st.session_state.nguoibao_val = ""      # Xóa sạch Người báo
-                    
-                    # Buộc trang tải lại để giao diện áp dụng các giá trị trống vừa cập nhật
+                    # 3. Ép buộc ứng dụng tải lại ngay lập tức với trạng thái form trống hoàn toàn
                     st.rerun()
                 else:
                     st.error(f"Lỗi phản hồi từ máy chủ (Mã lỗi: {response.status_code})")
