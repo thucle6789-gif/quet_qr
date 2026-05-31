@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import cv2
 import numpy as np
+from PIL import Image
 
 # 1. Điền đường link Web App URL Google Apps Script của bạn vào đây
 WEB_APP_URL = "DÁN_ĐƯỜNG_LINK_WEB_APP_URL_CỦA_BẠN_VÀO_ĐÂY"
@@ -19,38 +20,22 @@ st.markdown("""
 
 st.markdown("<h1 class='main-title'>Quét QR Code & Nhập Dữ Liệu</h1>", unsafe_allow_html=True)
 
-# --- DANH SÁCH CÔNG ĐOẠN ---
-DANH_SACH_CONG_DOAN = [
-    "P013_Tạo phôi và Sơchế",
-    "P014_Tinh chế và Định hình",
-    "P015_Chà nhám và Bề mặt",
-    "P016_Lắp ráp và Liên kết",
-    "P017_Làm nguội và Hoàn thiện",
-    "P018_Sơn - Màu",
-    "P019_Washing - Cleaning",
-    "P20_Lắp ráp hoàn thiện",
-    "P021_Đóng gói hoàn thành"
-]
+st.subheader("📸 Máy quét bằng Camera Hệ thống")
 
-# --- KHỞI TẠO BỘ NHỚ TẠM (SESSION STATE) ---
-if "headcode_val" not in st.session_state:
-    st.session_state.headcode_val = ""
-if "congdoan_val" not in st.session_state:
-    st.session_state.congdoan_val = DANH_SACH_CONG_DOAN[0]
+# --- KHỞI TẠO CÁC BIẾN LƯU TRỮ TRẠNG THÁI FORM (SESSION STATE) ---
+if "qr_code_detected" not in st.session_state:
+    st.session_state.qr_code_detected = ""
 if "soluong_val" not in st.session_state:
-    st.session_state.soluong_val = 1.000
+    st.session_state.soluong_val = 1.000   # Mặc định ban đầu là dạng số lẻ
 if "nguoibao_val" not in st.session_state:
     st.session_state.nguoibao_val = ""
 
-# --- KHU VỰC QUET MÃ QR ---
-st.subheader("📸 Máy quét bằng Camera Hệ thống")
-
+# Thiết lập bộ upload ảnh từ camera hệ thống
 uploaded_file = st.file_uploader(
     "▶️ BẤM VÀO ĐÂY ĐỂ MỞ CAMERA HỆ THỐNG CHỤP MÃ QR", 
     type=["jpg", "jpeg", "png"],
     accept_multiple_files=False,
-    label_visibility="visible",
-    key="camera_key" # Định danh để hệ thống tự reset camera
+    label_visibility="visible"
 )
 
 # Xử lý ảnh chụp từ camera
@@ -63,85 +48,86 @@ if uploaded_file is not None:
         data, bbox, _ = detector.detectAndDecode(opencv_img)
         
         if data:
-            # Điền dữ liệu quét được thẳng vào bộ nhớ của ô nhập liệu
-            st.session_state.headcode_val = data
-            st.toast(f"✅ Đã nhận diện thành công Headcode: {data}", icon="✅")
-            st.rerun() # Tải lại trang ngay lập tức để đồng bộ chữ lên màn hình
+            st.session_state.qr_code_detected = data
+            st.success(f"✅ Đã nhận diện thành công Headcode: {data}")
         else:
-            st.error("❌ Không tìm thấy mã QR trong bức ảnh vừa chụp. Vui lòng lấy nét rõ ràng và chụp lại!")
+            st.error("❌ Không tìm thấy mã QR trong bức ảnh vừa chụp. Vui lòng chụp rõ nét hơn!")
     except Exception as e:
         st.error(f"Lỗi xử lý hình ảnh: {e}")
 
 st.markdown("---")
 
-# --- KHU VỰC THÔNG TIN BẢN GHI (KHÔNG DÙNG ST.FORM) ---
+# --- KHU VỰC FORM ĐIỀN THÔNG TIN ---
 st.subheader("📝 Thông tin bản ghi")
 
-col1, col2 = st.columns(2)
+DANH_SACH_CONG_DOAN = [
+    "P013_Tạo phôi và Sơchế",
+    "P014_Tinh chế và Định hình",
+    "P015_Chà nhám và Bề mặt",
+    "P016_Lắp ráp và Liên kết",
+    "P017_Làm nguội và Hoàn thiện",
+    "P018_Sơn - Màu",
+    "P019_Washing - Cleaning",
+    "P20_Lắp ráp hoàn thiện",
+    "P021_Đóng gói hoàn thành"
+]
 
-with col1:
-    # Ô nhập Headcode nhận giá trị từ bộ nhớ tạm, cho phép chỉnh sửa tay thoải mái
-    headcode_input = st.text_input("Headcode *", value=st.session_state.headcode_val)
-    # Cập nhật ngược lại bộ nhớ nếu người dùng sửa tay
-    st.session_state.headcode_val = headcode_input
-
-    # Ô chọn Công đoạn
-    try:
-        idx = DANH_SACH_CONG_DOAN.index(st.session_state.congdoan_val)
-    except ValueError:
-        idx = 0
-    congdoan_input = st.selectbox("Công đoạn", options=DANH_SACH_CONG_DOAN, index=idx)
-    st.session_state.congdoan_val = congdoan_input
+# Sử dụng st.form để bọc các ô nhập liệu
+with st.form(key="factory_data_form", clear_on_submit=False):
+    col1, col2 = st.columns(2)
     
-with col2:
-    # Ô nhập Số lượng số lẻ
-    soluong_input = st.number_input(
-        "Số lượng", 
-        min_value=0.000, 
-        value=st.session_state.soluong_val,
-        step=0.001, 
-        format="%.3f"
-    )
-    st.session_state.soluong_val = soluong_input
-    
-    # Ô nhập Người báo
-    nguoibao_input = st.text_input("Người báo", value=st.session_state.nguoibao_val)
-    st.session_state.nguoibao_val = nguoibao_input
+    with col1:
+        # Nhận giá trị Headcode từ bộ nhớ tạm session_state
+        headcode = st.text_input("Headcode *", value=st.session_state.qr_code_detected)
+        
+        # Danh sách chọn công đoạn
+        congdoan = st.selectbox("Công đoạn", options=DANH_SACH_CONG_DOAN)
+        
+    with col2:
+        # CẢI TIẾN SỐ LƯỢNG: Đổi sang định dạng số thực (float), định dạng hiển thị 3 chữ số thập phân (%.3f)
+        soluong = st.number_input(
+            "Số lượng", 
+            min_value=0.000, 
+            value=st.session_state.soluong_val, 
+            step=0.001, 
+            format="%.3f"
+        )
+        
+        # Nhận giá trị Người báo từ bộ nhớ tạm session_state
+        nguoibao = st.text_input("Người báo", value=st.session_state.nguoibao_val)
 
-st.markdown("<br>", unsafe_allow_html=True)
-# Nút bấm gửi dữ liệu độc lập bên ngoài form
-submit_button = st.button("💾 Gửi dữ liệu lên Google Sheet", use_container_width=True, type="primary")
+    submit_button = st.form_submit_button(label="💾 Gửi dữ liệu lên Google Sheet", use_container_width=True)
 
-# --- XỬ LÝ GỬI DỮ LIỆU ---
+# --- XỬ LÝ GỬI DỮ LIỆU & RESET FORM ---
 if submit_button:
-    if not st.session_state.headcode_val:
+    if not headcode:
         st.error("Trường 'Headcode' đang trống. Vui lòng mở camera chụp QR hoặc điền tay.")
-    elif not st.session_state.nguoibao_val:
+    elif not nguoibao:
         st.error("Vui lòng điền thông tin 'Người báo'.")
     else:
+        # Giữ nguyên giá trị float của số lượng để truyền đi
         payload = {
-            "headcode": st.session_state.headcode_val,
-            "soluong": float(st.session_state.soluong_val),
-            "congdoan": st.session_state.congdoan_val,
-            "nguoibao": st.session_state.nguoibao_val
+            "headcode": headcode,
+            "soluong": float(soluong),
+            "congdoan": congdoan,
+            "nguoibao": nguoibao
         }
         
         with st.spinner("Đang truyền dữ liệu về hệ thống bảng tính..."):
             try:
                 response = requests.post(WEB_APP_URL, json=payload)
                 if response.status_code == 200:
-                    # HIỂN THỊ THÔNG BÁO THÀNH CÔNG ĐÚNG YÊU CẦU
+                    # 1. Hiển thị thông báo đúng yêu cầu của bạn
                     st.success("🎉 Đã up dữ liệu thành công")
                     
-                    # XÓA TOÀN BỘ DỮ LIỆU ĐỂ TRẢ VỀ FORM TRỐNG HOÀN TOÀN
-                    st.session_state.headcode_val = ""
-                    st.session_state.soluong_val = 1.000
-                    st.session_state.nguoibao_val = ""
-                    st.session_state.congdoan_val = DANH_SACH_CONG_DOAN[0]
+                    # 2. XÓA DỮ LIỆU ĐỂ TRẢ VỀ FORM TRỐNG HOÀN TOÀN
+                    st.session_state.qr_code_detected = ""  # Xóa sạch Headcode
+                    st.session_state.soluong_val = 1.000     # Trả số lượng về mặc định
+                    st.session_state.nguoibao_val = ""      # Xóa sạch Người báo
                     
-                    # Ép buộc trang tải lại để giao diện áp dụng trạng thái trống vừa xóa
+                    # Buộc trang tải lại để giao diện áp dụng các giá trị trống vừa cập nhật
                     st.rerun()
                 else:
-                    st.error(f"Lỗi phản hồi từ máy chủ Google (Mã lỗi: {response.status_code})")
+                    st.error(f"Lỗi phản hồi từ máy chủ (Mã lỗi: {response.status_code})")
             except Exception as e:
                 st.error(f"Lỗi kết nối: {e}")
