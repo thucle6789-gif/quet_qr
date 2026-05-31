@@ -2,78 +2,71 @@ import streamlit as st
 import requests
 import cv2
 import numpy as np
-from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
+from PIL import Image
 
 # 1. Điền đường link Web App URL Google Apps Script của bạn vào đây
 WEB_APP_URL = "DÁN_ĐƯỜNG_LINK_WEB_APP_URL_CỦA_BẠN_VÀO_ĐÂY"
 
 st.set_page_config(page_title="Quét QR Code Tối Ưu", layout="centered")
 
-# Nhúng CSS làm đẹp giao diện
 st.markdown("""
     <style>
     .main-title { text-align: center; font-family: Arial, sans-serif; font-weight: bold; color: #1E1E1E; margin-bottom: 20px; }
-    /* Làm đẹp khu vực hiển thị camera */
-    div[data-testid="stWebrtcStreamer"] {
+    /* Tùy biến khung camera gốc của Streamlit cho đẹp hơn */
+    div[data-testid="stCameraInput"] {
         border: 6px solid #222222;
         border-radius: 16px;
         overflow: hidden;
-        background-color: #000;
-        margin-bottom: 15px;
+        box-shadow: 0px 6px 12px rgba(0,0,0,0.15);
     }
     </style>
 """, unsafe_allow_html=True)
 
 st.markdown("<h1 class='main-title'>Quét QR Code & Nhập Dữ Liệu</h1>", unsafe_allow_html=True)
 
-# --- KHỞI TẠO CÁC BIẾN TRẠNG THÁI (SESSION STATE) ---
+# --- KHỞI TẠO BIẾN TRẠNG THÁI (SESSION STATE) ---
 if "qr_code_detected" not in st.session_state:
     st.session_state.qr_code_detected = ""  # Lưu chuỗi QR quét được
-if "camera_active" not in st.session_state:
-    st.session_state.camera_active = True   # Trạng thái bật/tắt của hệ thống camera
+if "show_camera" not in st.session_state:
+    st.session_state.show_camera = False    # Trạng thái ẩn/hiện camera
 
-st.subheader("📸 Máy quét QR Code (Mặc định camera sau)")
+st.subheader("📸 Máy quét QR Code")
 
-# Hàm callback xử lý từng khung hình video từ WebRTC bằng OpenCV để quét QR
-def video_frame_callback(frame):
-    img = frame.to_ndarray(format="bgr24")
-    
-    # Sử dụng bộ dò mã QR của OpenCV
-    detector = cv2.QRCodeDetector()
-    data, bbox, _ = detector.detectAndDecode(img)
-    
-    if data:
-        # Khi tìm thấy mã QR, lưu vào session_state và tắt camera
-        st.session_state.qr_code_detected = data
-        st.session_state.camera_active = False
-        st.toast("Quét mã QR thành công!", icon="✅")
-        
-    return frame
-
-# HIỂN THỊ CAMERA
-if st.session_state.camera_active:
-    webrtc_ctx = webrtc_streamer(
-        key="qr-scanner",
-        mode=WebRtcMode.SENDRECV,
-        rtc_configuration=RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}),
-        video_frame_callback=video_frame_callback,
-        # CẤU HÌNH MẶC ĐỊNH ÉP BUỘC MỞ CAMERA SAU TRÊN ĐIỆN THOẠI
-        media_stream_constraints={
-            "video": {
-                "facingMode": "environment",  # "environment" nghĩa là camera phía sau
-                "width": {"ideal": 640},
-                "height": {"ideal": 480}
-            },
-            "audio": False # Tắt mic tránh đòi quyền âm thanh
-        },
-        async_processing=True,
-    )
-else:
-    # Nếu camera đã tự động tắt sau khi quét thành công, hiện nút để bấm quét lại lượt mới nếu muốn
-    if st.button("🔄 BẬT LẠI CAMERA ĐỂ QUẾT MÃ MỚI", use_container_width=True, type="primary"):
-        st.session_state.camera_active = True
-        st.session_state.qr_code_detected = ""
+# BƯỚC 1: Nếu trạng thái hiển thị camera là SAI -> Hiện nút bấm để MỞ
+if not st.session_state.show_camera:
+    if st.button("▶️ MỞ CAMERA ĐỂ QUẾT QR", use_container_width=True, type="primary"):
+        st.session_state.show_camera = True
+        st.session_state.qr_code_detected = "" # Xóa dữ liệu cũ để quét mới
         st.rerun()
+
+# BƯỚC 2: Nếu trạng thái hiển thị camera là ĐÚNG -> Mở khung camera của Streamlit
+else:
+    if st.button("❌ HỦY QUẾT / TẮT CAMERA", use_container_width=True):
+        st.session_state.show_camera = False
+        st.rerun()
+
+    # Dùng camera_input gốc, cực kỳ ổn định, tự động tối ưu camera sau trên điện thoại
+    img_file_buffer = st.camera_input("Hãy đưa mã QR vào chính giữa khung hình và bấm nút chụp")
+
+    if img_file_buffer is not None:
+        try:
+            # Đọc ảnh từ bộ nhớ buffer sang OpenCV để giải mã
+            file_bytes = np.asarray(bytearray(img_file_buffer.read()), dtype=np.uint8)
+            opencv_img = cv2.imdecode(file_bytes, 1)
+            
+            # Sử dụng bộ quét QR của OpenCV
+            detector = cv2.QRCodeDetector()
+            data, bbox, _ = detector.detectAndDecode(opencv_img)
+            
+            if data:
+                st.session_state.qr_code_detected = data # Điền vào ô nhập liệu
+                st.session_state.show_camera = False    # TỰ ĐỘNG TẮT CAMERA BIẾN MẤT
+                st.toast("Quét mã QR thành công!", icon="✅")
+                st.rerun() # Tải lại trang để áp dụng ẩn camera ngay lập tức
+            else:
+                st.error("❌ Ảnh chụp không rõ hoặc không có mã QR. Vui lòng căn nét thẳng góc và chụp lại!")
+        except Exception as e:
+            st.error(f"Lỗi xử lý hình ảnh: {e}")
 
 st.markdown("---")
 
@@ -84,7 +77,7 @@ with st.form(key="factory_data_form", clear_on_submit=False):
     col1, col2 = st.columns(2)
     
     with col1:
-        # Trường Headcode tự động nhận diện từ QR, hoặc nhập tay bình thường
+        # Trường Headcode tự động điền từ QR, hoặc có thể gõ tay
         headcode = st.text_input("Headcode *", value=st.session_state.qr_code_detected)
         congdoan = st.text_input("Công đoạn")
         
@@ -113,10 +106,7 @@ if submit_button:
                 response = requests.post(WEB_APP_URL, json=payload)
                 if response.status_code == 200:
                     st.success(f"🎉 Đã lưu thành công dữ liệu cho Headcode: {headcode}!")
-                    # Sau khi gửi thành công, mở lại camera chuẩn bị cho lượt quét tiếp theo
-                    st.session_state.qr_code_detected = ""
-                    st.session_state.camera_active = True
-                    st.rerun()
+                    st.session_state.qr_code_detected = "" # Đặt lại rỗng cho lượt tiếp theo
                 else:
                     st.error(f"Lỗi phản hồi từ máy chủ (Mã lỗi: {response.status_code})")
             except Exception as e:
