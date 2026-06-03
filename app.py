@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 # =====================================================
 # CẤU HÌNH
 # =====================================================
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzOFJsvHTtpPOzGv8NQRfr12SYMNp7bDUxoHEPl6vEkOChpzDxAwzhc_aNQls-97PankA/exec"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbw6FYRy57SqokstI44AKSRR_rhuIjmeeNEox5E_IYD5Gk7m-p9NMDClJBaD8hmtwOaLMg/exec"
 VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 DANH_SACH_CONG_DOAN = [
@@ -70,7 +70,7 @@ def fetch_active_jobs_from_sheet():
             data = resp.json()
             jobs = {}
             for item in data.get("active_jobs", []):
-                job_key = f"{item['headcode']}|{item['congdoan']}"
+                job_key = f"{item['headcode']}|{item['congdoan']}|{item['nguoibao'].strip().lower()}"
                 jobs[job_key] = item
             return jobs
     except Exception:
@@ -156,17 +156,6 @@ with col_scan:
             key=f"congdoan_{st.session_state.form_key}"
         )
 
-        job_key = f"{headcode}|{congdoan}" if headcode else ""
-        is_active = job_key in st.session_state.active_jobs
-
-        if is_active:
-            job_info = st.session_state.active_jobs[job_key]
-            st.info(f"🔄 Đang làm từ **{job_info['gio_bat_dau']}** — Xác nhận để **HOÀN THÀNH**")
-            mode_label = "🏁 HOÀN THÀNH"
-        else:
-            st.info("🚀 Chưa bắt đầu tại công đoạn này — Xác nhận để **BẮT ĐẦU**")
-            mode_label = "▶️ BẮT ĐẦU"
-
         col_a, col_b = st.columns(2)
         with col_a:
             soluong = st.number_input(
@@ -178,11 +167,28 @@ with col_scan:
                 key=f"soluong_{st.session_state.form_key}"
             )
         with col_b:
+            # ✅ Người vận hành lên TRƯỚC để tính job_key bên dưới
             nguoibao = st.text_input(
                 "Người vận hành *",
                 value=st.session_state.nguoibao_val,
                 key=f"nguoibao_{st.session_state.form_key}"
             )
+
+        # ✅ Key đầy đủ: headcode + công đoạn + người vận hành
+        # Cho phép 2 người cùng làm 1 mã QR ở cùng công đoạn độc lập nhau
+        job_key = f"{headcode}|{congdoan}|{nguoibao.strip().lower()}" if headcode and nguoibao.strip() else ""
+        is_active = job_key in st.session_state.active_jobs
+
+        if is_active:
+            job_info = st.session_state.active_jobs[job_key]
+            st.info(f"🔄 **{nguoibao}** đang làm từ **{job_info['gio_bat_dau']}** — Xác nhận để **HOÀN THÀNH**")
+            mode_label = "🏁 HOÀN THÀNH"
+        elif headcode and nguoibao.strip():
+            st.info(f"🚀 **{nguoibao}** chưa bắt đầu mã này tại công đoạn này — Xác nhận để **BẮT ĐẦU**")
+            mode_label = "▶️ BẮT ĐẦU"
+        else:
+            st.info("💡 Điền đầy đủ Headcode và Người vận hành để xác định trạng thái")
+            mode_label = "▶️ BẮT ĐẦU"
 
         submit = st.form_submit_button(
             label=f"💾 XÁC NHẬN — {mode_label}",
@@ -201,7 +207,8 @@ with col_scan:
             st.error("Vui lòng điền Người vận hành.")
         else:
             now_vn = datetime.now(VN_TZ).strftime("%d/%m/%Y %H:%M:%S")
-            job_key = f"{headcode}|{congdoan}"
+            # ✅ Key bao gồm người vận hành để phân biệt 2 người cùng làm 1 mã
+            job_key = f"{headcode}|{congdoan}|{nguoibao.strip().lower()}"
             is_active = job_key in st.session_state.active_jobs
 
             if not is_active:
