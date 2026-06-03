@@ -183,16 +183,21 @@ with col_scan:
     st.markdown('<div class="card"><div class="card-title">📝 Thông tin thao tác</div>', unsafe_allow_html=True)
 
     # Người vận hành & công đoạn NGOÀI form để cập nhật realtime
+    # ✅ Key động theo form_key → khi prefill từ danh sách, form_key tăng
+    # → widget tạo mới hoàn toàn với value= mới, không bị Streamlit giữ giá trị cũ
+    _nb_key = f"_nguoibao_{st.session_state.form_key}"
+    _cd_key = f"_congdoan_{st.session_state.form_key}"
+
     def on_nguoibao_change():
-        st.session_state.nguoibao_val = st.session_state["_nguoibao_input"]
+        st.session_state.nguoibao_val = st.session_state[_nb_key]
 
     def on_congdoan_change():
-        st.session_state.congdoan_val = st.session_state["_congdoan_input"]
+        st.session_state.congdoan_val = st.session_state[_cd_key]
 
     st.text_input(
         "Người vận hành *",
         value=st.session_state.nguoibao_val,
-        key="_nguoibao_input",
+        key=_nb_key,
         on_change=on_nguoibao_change,
         placeholder="Gõ tên rồi Enter...",
     )
@@ -201,7 +206,7 @@ with col_scan:
         options=DANH_SACH_CONG_DOAN,
         index=DANH_SACH_CONG_DOAN.index(st.session_state.congdoan_val)
               if st.session_state.congdoan_val in DANH_SACH_CONG_DOAN else 0,
-        key="_congdoan_input",
+        key=_cd_key,
         on_change=on_congdoan_change,
     )
 
