@@ -4,6 +4,7 @@ import cv2
 import numpy as np
 from datetime import datetime
 from zoneinfo import ZoneInfo
+import time
 
 # =====================================================
 # CẤU HÌNH
@@ -97,8 +98,9 @@ defaults = {
     "active_jobs":        {},
     "active_jobs_loaded": False,
     "last_action":        None,
-    "submitting":         False,   # ← Flag chặn double-submit
     # Khi bấm nút hoàn thành từ danh sách → prefill form
+    "last_submit_key":    "",   # Chặn double-submit
+    "last_submit_time":   0.0,
     "prefill_headcode":   "",
     "prefill_nguoibao":   "",
     "prefill_congdoan":   "",
@@ -193,7 +195,6 @@ with col_scan:
         key="_nguoibao_input",
         on_change=on_nguoibao_change,
         placeholder="Gõ tên rồi Enter...",
-        disabled=st.session_state.submitting,
     )
     st.selectbox(
         "Công đoạn *",
@@ -202,7 +203,6 @@ with col_scan:
               if st.session_state.congdoan_val in DANH_SACH_CONG_DOAN else 0,
         key="_congdoan_input",
         on_change=on_congdoan_change,
-        disabled=st.session_state.submitting,
     )
 
     # Banner trạng thái realtime
@@ -233,11 +233,9 @@ with col_scan:
             format="%.3f",
             key=f"soluong_{st.session_state.form_key}"
         )
-        # Nút bị disable khi đang submitting → ngăn bấm liên tiếp
         submit = st.form_submit_button(
-            label="⏳ Đang xử lý..." if st.session_state.submitting else f"💾 XÁC NHẬN — {mode_label}",
+            label=f"💾 XÁC NHẬN — {mode_label}",
             use_container_width=True,
-            disabled=st.session_state.submitting,
         )
 
     st.markdown('</div>', unsafe_allow_html=True)
@@ -245,11 +243,24 @@ with col_scan:
     # =====================================================
     # XỬ LÝ SUBMIT
     # =====================================================
-    if submit and not st.session_state.submitting:
+    if submit:
         nguoibao = st.session_state.nguoibao_val.strip()
         congdoan  = st.session_state.congdoan_val
 
-        if not headcode:
+        # ✅ Chặn double-submit: nếu cùng key trong vòng 5 giây → bỏ qua
+        _submit_key = f"{headcode}|{congdoan}|{nguoibao}"
+        _now = time.time()
+        _is_dup = (
+            _submit_key == st.session_state.last_submit_key and
+            (_now - st.session_state.last_submit_time) < 5.0
+        )
+        if not _is_dup:
+            st.session_state.last_submit_key  = _submit_key
+            st.session_state.last_submit_time = _now
+
+        if _is_dup:
+            st.warning("⚠️ Thao tác vừa được ghi nhận, vui lòng chờ...")
+        elif not headcode:
             st.error("Vui lòng quét hoặc điền Headcode.")
         elif not nguoibao:
             st.error("Vui lòng điền Người vận hành.")
@@ -257,8 +268,6 @@ with col_scan:
             job_key   = f"{headcode}|{congdoan}|{nguoibao.lower()}"
             is_active = job_key in st.session_state.active_jobs
 
-            # ── Bật flag submitting ngay lập tức ──
-            st.session_state.submitting = True
 
             if not is_active:
                 # ---- BẮT ĐẦU ----
@@ -287,18 +296,15 @@ with col_scan:
                     st.session_state.last_action  = {"type": "start", "headcode": headcode, "congdoan": congdoan}
                     st.session_state.qr_detected  = ""
                     st.session_state.soluong_val  = 1.000
-                    st.session_state.submitting   = False
                     st.session_state.form_key    += 1
                     st.rerun()
                 elif resp_data.get("status") == "duplicate":
                     # Apps Script báo đã tồn tại → load lại danh sách
                     st.warning("⚠️ Mã này đã được ghi nhận bắt đầu trước đó. Đang đồng bộ lại...")
                     st.session_state.active_jobs  = fetch_active_jobs_from_sheet()
-                    st.session_state.submitting   = False
                     st.session_state.form_key    += 1
                     st.rerun()
                 else:
-                    st.session_state.submitting = False
                     st.error(f"Lỗi: {resp_data.get('message', 'Không rõ')}")
 
             else:
@@ -322,11 +328,9 @@ with col_scan:
                     st.session_state.last_action  = {"type": "finish", "headcode": headcode, "congdoan": congdoan}
                     st.session_state.qr_detected  = ""
                     st.session_state.soluong_val  = 1.000
-                    st.session_state.submitting   = False
                     st.session_state.form_key    += 1
                     st.rerun()
                 else:
-                    st.session_state.submitting = False
                     st.error(f"Lỗi: {resp_data.get('message', 'Không rõ')}")
 
 # ─────────────────────────────────────────────────
