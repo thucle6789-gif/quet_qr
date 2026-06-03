@@ -3,13 +3,13 @@ import requests
 import cv2
 import numpy as np
 from datetime import datetime
-import pytz
+from zoneinfo import ZoneInfo  # Built-in Python 3.9+
 
 # =====================================================
 # CẤU HÌNH
 # =====================================================
 WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxB9cagxYoxM8kpbLtkFGKoQ6SND4QNqLbPTwFR1fs0bNUH-KNDFSaYtrTxKJ8VadEv8g/exec"
-VN_TZ = pytz.timezone("Asia/Ho_Chi_Minh")
+VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 DANH_SACH_CONG_DOAN = [
     "P013_Tạo phôi và Sơchế",
