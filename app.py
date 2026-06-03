@@ -307,6 +307,35 @@ with col_scan:
             st.error("Vui lòng quét hoặc điền Headcode.")
         elif not nguoibao:
             st.error("Vui lòng điền Người vận hành.")
+        elif (st.session_state.lookup_result is None or
+              st.session_state.lookup_result.get("status") != "found"):
+            # ✅ CHẶN SUBMIT: headcode chưa được xác nhận hợp lệ từ sheet DATA
+            if st.session_state.lookup_headcode != headcode:
+                # Chưa lookup lần nào → gọi lookup ngay
+                with st.spinner("🔍 Đang kiểm tra mã..."):
+                    result = lookup_headcode(headcode)
+                st.session_state.lookup_headcode = headcode
+                st.session_state.lookup_result   = result
+                if result and result.get("status") == "found":
+                    st.session_state.form_key += 1
+                    st.rerun()  # Rerun để hiện thông tin SP rồi cho submit lại
+                elif result and result.get("status") == "not_found":
+                    st.session_state.qr_detected     = ""
+                    st.session_state.lookup_headcode = ""
+                    st.session_state.lookup_result   = None
+                    st.session_state.form_key += 1
+                    st.error(f"❌ Mã **{headcode}** không tồn tại. Vui lòng quét lại.")
+                    st.rerun()
+                else:
+                    st.error("❌ Không thể kết nối để xác minh mã. Vui lòng thử lại.")
+            else:
+                # Đã lookup rồi nhưng không hợp lệ
+                st.error("❌ Headcode không hợp lệ. Vui lòng quét mã đúng.")
+                st.session_state.qr_detected     = ""
+                st.session_state.lookup_headcode = ""
+                st.session_state.lookup_result   = None
+                st.session_state.form_key += 1
+                st.rerun()
         else:
             job_key   = f"{headcode}|{congdoan}|{nguoibao.lower()}"
             is_active = job_key in st.session_state.active_jobs
