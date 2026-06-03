@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo  # Built-in Python 3.9+
 # =====================================================
 # CẤU HÌNH
 # =====================================================
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxB9cagxYoxM8kpbLtkFGKoQ6SND4QNqLbPTwFR1fs0bNUH-KNDFSaYtrTxKJ8VadEv8g/exec"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwLCTWPacuIT2j1Gy-OWHOFEERQoydZkT9ZmrOtT5hodW1RR-p-xMdEqeyKrlhz5B3BmA/exec"
 VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 DANH_SACH_CONG_DOAN = [
