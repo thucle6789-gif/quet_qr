@@ -9,7 +9,7 @@ import time
 # =====================================================
 # CẤU HÌNH
 # =====================================================
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwR4nvr7xgJywQ3GhV-0cOWWkZpCURV4FiPZ5EyjYD92jvfUCJdKjLfSqlfLo0iR8lOLA/exec"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxHp38uIaMKqxWhqzriq0fS98RUZY4qRss9pAtTyd2OIn4x_u4nTeu31sY8vOrVsjOZ8g/exec"
 VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 DANH_SACH_CONG_DOAN = [
@@ -86,6 +86,20 @@ def call_api(payload):
     except Exception as ex:
         return False, {"message": str(ex)}
 
+def lookup_headcode(headcode: str):
+    """Tra cứu headcode trong sheet DATA. Trả về dict hoặc None nếu lỗi kết nối."""
+    try:
+        resp = requests.get(
+            WEB_APP_URL,
+            params={"action": "lookup", "headcode": headcode.strip()},
+            timeout=10
+        )
+        if resp.status_code == 200:
+            return resp.json()
+    except Exception:
+        pass
+    return None
+
 # =====================================================
 # SESSION STATE INIT
 # =====================================================
@@ -101,6 +115,9 @@ defaults = {
     # Khi bấm nút hoàn thành từ danh sách → prefill form
     "last_submit_key":    "",   # Chặn double-submit
     "last_submit_time":   0.0,
+    # Kết quả lookup headcode từ sheet DATA
+    "lookup_headcode":    "",   # headcode đã lookup
+    "lookup_result":      None, # dict {status, ten_cong_trinh, ten_san_pham} hoặc None
     "prefill_headcode":   "",
     "prefill_nguoibao":   "",
     "prefill_congdoan":   "",
@@ -181,6 +198,27 @@ with col_scan:
 
     # Form
     st.markdown('<div class="card"><div class="card-title">📝 Thông tin thao tác</div>', unsafe_allow_html=True)
+
+    # Hiển thị thông tin sản phẩm nếu đã lookup thành công
+    if (st.session_state.lookup_result and
+            st.session_state.lookup_result.get("status") == "found"):
+        r = st.session_state.lookup_result
+        st.markdown(f"""
+        <div style="background:#0f2d1f; border:1px solid #00e5a0; border-radius:8px;
+                    padding:10px 14px; margin-bottom:12px; font-size:0.82rem;">
+            <div style="color:#00e5a0; font-family:IBM Plex Mono,monospace;
+                        font-size:0.7rem; letter-spacing:1px; margin-bottom:6px;">
+                📦 THÔNG TIN SẢN PHẨM
+            </div>
+            <div style="color:#e0e0e0;">
+                <b>Công trình:</b> {r.get('ten_cong_trinh','')}
+            </div>
+            <div style="color:#e0e0e0; margin-top:4px;">
+                <b>Sản phẩm:</b> {r.get('ten_san_pham','')}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
 
     # Người vận hành & công đoạn NGOÀI form để cập nhật realtime
     # ✅ Key động theo form_key → khi prefill từ danh sách, form_key tăng
