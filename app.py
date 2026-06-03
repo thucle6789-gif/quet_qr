@@ -60,10 +60,8 @@ st.markdown("""
 
 # =====================================================
 # HÀM: LẤY DANH SÁCH ĐANG LÀM TỪ GOOGLE SHEET
-# Được gọi khi app load lần đầu (active_jobs_loaded = False)
 # =====================================================
 def fetch_active_jobs_from_sheet():
-    """Query Google Sheet để lấy tất cả dòng có trạng thái ĐANG LÀM."""
     try:
         resp = requests.get(WEB_APP_URL + "?action=get_active", timeout=10)
         if resp.status_code == 200:
@@ -82,35 +80,44 @@ def fetch_active_jobs_from_sheet():
 # =====================================================
 defaults = {
     "qr_detected": "",
-    "nguoibao_val": "",
+    "nguoibao_val": "",       # Giá trị realtime của ô người vận hành (ngoài form)
+    "congdoan_val": DANH_SACH_CONG_DOAN[0],  # Giá trị realtime của selectbox (ngoài form)
     "soluong_val": 1.000,
     "form_key": 0,
     "active_jobs": {},
-    "active_jobs_loaded": False,  # ← FLAG: đã load từ Sheet chưa
+    "active_jobs_loaded": False,
     "last_action": None,
 }
 for k, v in defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
-# =====================================================
-# LOAD ACTIVE JOBS TỪ SHEET KHI APP MỞ LẦN ĐẦU
-# Đây là key fix cho vấn đề mất trạng thái khi thoát app
-# =====================================================
 if not st.session_state.active_jobs_loaded:
     with st.spinner("🔄 Đang đồng bộ trạng thái từ hệ thống..."):
         st.session_state.active_jobs = fetch_active_jobs_from_sheet()
         st.session_state.active_jobs_loaded = True
 
 # =====================================================
-# LAYOUT: 2 cột chính
+# TÍNH TRẠNG THÁI REALTIME (dùng session_state — cập nhật ngay khi gõ)
+# =====================================================
+def get_current_job_state():
+    """Tính job_key và is_active từ session_state hiện tại — không cần submit form."""
+    hc = st.session_state.qr_detected or ""
+    cd = st.session_state.congdoan_val
+    nb = st.session_state.nguoibao_val.strip()
+    if hc and nb:
+        jk = f"{hc}|{cd}|{nb.lower()}"
+        return jk, jk in st.session_state.active_jobs
+    return "", False
+
+# =====================================================
+# LAYOUT
 # =====================================================
 col_scan, col_active = st.columns([1.1, 0.9], gap="large")
 
-# =====================================================
-# CỘT TRÁI: QUÉT QR & FORM
-# =====================================================
 with col_scan:
+
+    # --- QUÉT QR ---
     st.markdown('<div class="card"><div class="card-title">📷 Quét mã QR</div>', unsafe_allow_html=True)
 
     uploaded_file = st.file_uploader(
@@ -141,55 +148,68 @@ with col_scan:
 
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # --- FORM NHẬP LIỆU ---
+    # --- THÔNG TIN THAO TÁC ---
     st.markdown('<div class="card"><div class="card-title">📝 Thông tin thao tác</div>', unsafe_allow_html=True)
 
+    # =========================================================
+    # QUAN TRỌNG: Người vận hành & Công đoạn đặt NGOÀI st.form
+    # on_change cập nhật session_state ngay khi người dùng thay đổi
+    # → job_key được tính lại realtime → nút chuyển đúng trạng thái
+    # =========================================================
+    def on_nguoibao_change():
+        st.session_state.nguoibao_val = st.session_state["_nguoibao_input"]
+
+    def on_congdoan_change():
+        st.session_state.congdoan_val = st.session_state["_congdoan_input"]
+
+    st.text_input(
+        "Người vận hành *",
+        value=st.session_state.nguoibao_val,
+        key="_nguoibao_input",
+        on_change=on_nguoibao_change,
+        placeholder="Gõ tên rồi Enter..."
+    )
+
+    st.selectbox(
+        "Công đoạn *",
+        options=DANH_SACH_CONG_DOAN,
+        index=DANH_SACH_CONG_DOAN.index(st.session_state.congdoan_val)
+               if st.session_state.congdoan_val in DANH_SACH_CONG_DOAN else 0,
+        key="_congdoan_input",
+        on_change=on_congdoan_change
+    )
+
+    # Tính trạng thái realtime
+    job_key_live, is_active_live = get_current_job_state()
+
+    # Banner trạng thái — cập nhật ngay khi gõ tên / đổi công đoạn
+    if not st.session_state.qr_detected:
+        st.info("📷 Vui lòng quét mã QR trước")
+    elif not st.session_state.nguoibao_val.strip():
+        st.info("👤 Gõ tên người vận hành để xác định trạng thái")
+    elif is_active_live:
+        job_info = st.session_state.active_jobs[job_key_live]
+        st.warning(f"🔄 **{st.session_state.nguoibao_val}** đang làm từ **{job_info['gio_bat_dau']}** → Xác nhận để **HOÀN THÀNH**")
+    else:
+        st.info(f"🚀 **{st.session_state.nguoibao_val}** chưa bắt đầu → Xác nhận để **BẮT ĐẦU**")
+
+    mode_label = "🏁 HOÀN THÀNH" if is_active_live else "▶️ BẮT ĐẦU"
+
+    # Form chỉ còn: headcode (readonly display) + số lượng + nút submit
     with st.form(key=f"main_form_{st.session_state.form_key}", clear_on_submit=False):
         headcode = st.text_input(
             "Headcode *",
             value=st.session_state.qr_detected,
             key=f"headcode_{st.session_state.form_key}"
         )
-        congdoan = st.selectbox(
-            "Công đoạn *",
-            options=DANH_SACH_CONG_DOAN,
-            key=f"congdoan_{st.session_state.form_key}"
+        soluong = st.number_input(
+            "Số lượng",
+            min_value=0.000,
+            value=st.session_state.soluong_val,
+            step=0.001,
+            format="%.3f",
+            key=f"soluong_{st.session_state.form_key}"
         )
-
-        col_a, col_b = st.columns(2)
-        with col_a:
-            soluong = st.number_input(
-                "Số lượng",
-                min_value=0.000,
-                value=st.session_state.soluong_val,
-                step=0.001,
-                format="%.3f",
-                key=f"soluong_{st.session_state.form_key}"
-            )
-        with col_b:
-            # ✅ Người vận hành lên TRƯỚC để tính job_key bên dưới
-            nguoibao = st.text_input(
-                "Người vận hành *",
-                value=st.session_state.nguoibao_val,
-                key=f"nguoibao_{st.session_state.form_key}"
-            )
-
-        # ✅ Key đầy đủ: headcode + công đoạn + người vận hành
-        # Cho phép 2 người cùng làm 1 mã QR ở cùng công đoạn độc lập nhau
-        job_key = f"{headcode}|{congdoan}|{nguoibao.strip().lower()}" if headcode and nguoibao.strip() else ""
-        is_active = job_key in st.session_state.active_jobs
-
-        if is_active:
-            job_info = st.session_state.active_jobs[job_key]
-            st.info(f"🔄 **{nguoibao}** đang làm từ **{job_info['gio_bat_dau']}** — Xác nhận để **HOÀN THÀNH**")
-            mode_label = "🏁 HOÀN THÀNH"
-        elif headcode and nguoibao.strip():
-            st.info(f"🚀 **{nguoibao}** chưa bắt đầu mã này tại công đoạn này — Xác nhận để **BẮT ĐẦU**")
-            mode_label = "▶️ BẮT ĐẦU"
-        else:
-            st.info("💡 Điền đầy đủ Headcode và Người vận hành để xác định trạng thái")
-            mode_label = "▶️ BẮT ĐẦU"
-
         submit = st.form_submit_button(
             label=f"💾 XÁC NHẬN — {mode_label}",
             use_container_width=True
@@ -201,18 +221,20 @@ with col_scan:
     # XỬ LÝ SUBMIT
     # =====================================================
     if submit:
+        nguoibao = st.session_state.nguoibao_val.strip()
+        congdoan  = st.session_state.congdoan_val
+
         if not headcode:
             st.error("Vui lòng quét hoặc điền Headcode.")
         elif not nguoibao:
             st.error("Vui lòng điền Người vận hành.")
         else:
-            now_vn = datetime.now(VN_TZ).strftime("%d/%m/%Y %H:%M:%S")
-            # ✅ Key bao gồm người vận hành để phân biệt 2 người cùng làm 1 mã
-            job_key = f"{headcode}|{congdoan}|{nguoibao.strip().lower()}"
+            now_vn  = datetime.now(VN_TZ).strftime("%d/%m/%Y %H:%M:%S")
+            job_key = f"{headcode}|{congdoan}|{nguoibao.lower()}"
             is_active = job_key in st.session_state.active_jobs
 
             if not is_active:
-                # ---- QUÉT LẦN 1: BẮT ĐẦU ----
+                # ---- BẮT ĐẦU ----
                 payload = {
                     "action": "start",
                     "headcode": headcode,
@@ -236,14 +258,14 @@ with col_scan:
                         }
                         st.session_state.last_action = {"type": "start", "headcode": headcode, "congdoan": congdoan}
                         st.session_state.qr_detected = ""
-                        st.session_state.nguoibao_val = nguoibao
                         st.session_state.soluong_val = 1.000
+                        # Giữ nguoibao_val và congdoan_val để lần quét tiếp không phải nhập lại
                         st.session_state.form_key += 1
                         st.rerun()
                     except Exception as e:
                         st.error(f"Lỗi kết nối: {e}")
             else:
-                # ---- QUÉT LẦN 2: HOÀN THÀNH ----
+                # ---- HOÀN THÀNH ----
                 job_info = st.session_state.active_jobs[job_key]
                 payload = {
                     "action": "finish",
@@ -262,7 +284,6 @@ with col_scan:
                             del st.session_state.active_jobs[job_key]
                             st.session_state.last_action = {"type": "finish", "headcode": headcode, "congdoan": congdoan}
                             st.session_state.qr_detected = ""
-                            st.session_state.nguoibao_val = nguoibao
                             st.session_state.soluong_val = 1.000
                             st.session_state.form_key += 1
                             st.rerun()
@@ -272,7 +293,7 @@ with col_scan:
                         st.error(f"Lỗi kết nối: {e}")
 
 # =====================================================
-# CỘT PHẢI: TRẠNG THÁI THỜI GIAN THỰC
+# CỘT PHẢI: TRẠNG THÁI
 # =====================================================
 with col_active:
 
@@ -283,7 +304,6 @@ with col_active:
         else:
             st.success(f"🏁 ĐÃ HOÀN THÀNH: **{act['headcode']}** — {act['congdoan']}")
 
-    # Nút refresh thủ công để đồng bộ lại từ Sheet
     if st.button("🔄 Làm mới danh sách", use_container_width=True):
         st.session_state.active_jobs = fetch_active_jobs_from_sheet()
         st.rerun()
