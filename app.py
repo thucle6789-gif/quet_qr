@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 # =====================================================
 # CẤU HÌNH
 # =====================================================
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxBp9sa8CPpCVLmTXn_oJ1fGBnXrii-PUKxqfomONgic0WP0QTCNspBDufjOZ_dOZvo/exec"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwR4nvr7xgJywQ3GhV-0cOWWkZpCURV4FiPZ5EyjYD92jvfUCJdKjLfSqlfLo0iR8lOLA/exec"
 VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 DANH_SACH_CONG_DOAN = [
@@ -39,13 +39,13 @@ html, body, [class*="css"] { font-family: 'IBM Plex Sans', sans-serif; backgroun
 .card { background: #1a1f2e; border: 1px solid #2a3045; border-radius: 10px; padding: 20px; margin-bottom: 16px; }
 .card-title { font-family: 'IBM Plex Mono', monospace; font-size: 0.75rem; color: #00e5a0; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 14px; border-bottom: 1px solid #2a3045; padding-bottom: 8px; }
 .badge-doing { background: #1a2e1a; color: #4ade80; border: 1px solid #4ade80; padding: 3px 10px; border-radius: 20px; font-size: 0.7rem; font-family: 'IBM Plex Mono', monospace; font-weight: 600; letter-spacing: 1px; }
-.job-row { background: #1a1f2e; border: 1px solid #2a3045; border-left: 3px solid #f59e0b; border-radius: 6px; padding: 12px 16px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+.job-row { background: #1a1f2e; border: 1px solid #2a3045; border-left: 3px solid #f59e0b; border-radius: 6px; padding: 10px 14px; margin-bottom: 8px; }
 .job-headcode { font-family: 'IBM Plex Mono', monospace; font-size: 1rem; font-weight: 600; color: #f59e0b; }
 .job-meta { font-size: 0.78rem; color: #94a3b8; margin-top: 2px; }
-.job-time { font-family: 'IBM Plex Mono', monospace; font-size: 0.8rem; color: #64748b; text-align: right; }
 .stTextInput input, .stSelectbox select, .stNumberInput input { background: #0f1117 !important; border: 1px solid #2a3045 !important; color: #e0e0e0 !important; border-radius: 6px !important; font-family: 'IBM Plex Mono', monospace !important; }
 .stTextInput input:focus { border-color: #00e5a0 !important; box-shadow: 0 0 0 2px rgba(0,229,160,0.15) !important; }
 .stFormSubmitButton button { background: linear-gradient(135deg, #00e5a0, #00b37e) !important; color: #0f1117 !important; font-family: 'IBM Plex Mono', monospace !important; font-weight: 700 !important; font-size: 0.95rem !important; letter-spacing: 1px !important; border: none !important; border-radius: 8px !important; height: 48px !important; }
+.stFormSubmitButton button:disabled { opacity: 0.5 !important; cursor: not-allowed !important; }
 .stAlert { border-radius: 8px !important; }
 div[data-testid="stFileUploaderDropzone"] { padding: 10px !important; }
 </style>
@@ -59,7 +59,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =====================================================
-# HÀM: LẤY DANH SÁCH ĐANG LÀM TỪ GOOGLE SHEET
+# HÀM GỌI API
 # =====================================================
 def fetch_active_jobs_from_sheet():
     try:
@@ -68,41 +68,70 @@ def fetch_active_jobs_from_sheet():
             data = resp.json()
             jobs = {}
             for item in data.get("active_jobs", []):
-                job_key = f"{item['headcode']}|{item['congdoan']}|{item['nguoibao'].strip().lower()}"
-                jobs[job_key] = item
+                jk = f"{item['headcode']}|{item['congdoan']}|{item['nguoibao'].strip().lower()}"
+                jobs[jk] = item
             return jobs
     except Exception:
         pass
     return {}
 
+def call_api(payload):
+    """Gọi POST API, trả về (ok: bool, data: dict)."""
+    try:
+        resp = requests.post(WEB_APP_URL, json=payload, timeout=15)
+        if resp.status_code == 200:
+            return True, resp.json()
+        return False, {"message": f"HTTP {resp.status_code}"}
+    except Exception as ex:
+        return False, {"message": str(ex)}
+
 # =====================================================
 # SESSION STATE INIT
 # =====================================================
 defaults = {
-    "qr_detected": "",
-    "nguoibao_val": "",       # Giá trị realtime của ô người vận hành (ngoài form)
-    "congdoan_val": DANH_SACH_CONG_DOAN[0],  # Giá trị realtime của selectbox (ngoài form)
-    "soluong_val": 1.000,
-    "form_key": 0,
-    "active_jobs": {},
+    "qr_detected":        "",
+    "nguoibao_val":       "",
+    "congdoan_val":       DANH_SACH_CONG_DOAN[0],
+    "soluong_val":        1.000,
+    "form_key":           0,
+    "active_jobs":        {},
     "active_jobs_loaded": False,
-    "last_action": None,
+    "last_action":        None,
+    "submitting":         False,   # ← Flag chặn double-submit
+    # Khi bấm nút hoàn thành từ danh sách → prefill form
+    "prefill_headcode":   "",
+    "prefill_nguoibao":   "",
+    "prefill_congdoan":   "",
 }
 for k, v in defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
+# Load active jobs lần đầu
 if not st.session_state.active_jobs_loaded:
     with st.spinner("🔄 Đang đồng bộ trạng thái từ hệ thống..."):
         st.session_state.active_jobs = fetch_active_jobs_from_sheet()
         st.session_state.active_jobs_loaded = True
 
 # =====================================================
-# TÍNH TRẠNG THÁI REALTIME (dùng session_state — cập nhật ngay khi gõ)
+# XỬ LÝ PREFILL TỪ DANH SÁCH (bấm nút Hoàn thành trên job card)
+# Phải xử lý TRƯỚC khi render form để giá trị kịp hiển thị
+# =====================================================
+if st.session_state.prefill_headcode:
+    st.session_state.qr_detected    = st.session_state.prefill_headcode
+    st.session_state.nguoibao_val   = st.session_state.prefill_nguoibao
+    st.session_state.congdoan_val   = st.session_state.prefill_congdoan
+    st.session_state.prefill_headcode = ""
+    st.session_state.prefill_nguoibao = ""
+    st.session_state.prefill_congdoan = ""
+    st.session_state.form_key += 1
+    st.rerun()
+
+# =====================================================
+# TÍNH TRẠNG THÁI REALTIME
 # =====================================================
 def get_current_job_state():
-    """Tính job_key và is_active từ session_state hiện tại — không cần submit form."""
-    hc = st.session_state.qr_detected or ""
+    hc = st.session_state.qr_detected.strip()
     cd = st.session_state.congdoan_val
     nb = st.session_state.nguoibao_val.strip()
     if hc and nb:
@@ -115,24 +144,25 @@ def get_current_job_state():
 # =====================================================
 col_scan, col_active = st.columns([1.1, 0.9], gap="large")
 
+# ─────────────────────────────────────────────────
+# CỘT TRÁI
+# ─────────────────────────────────────────────────
 with col_scan:
 
-    # --- QUÉT QR ---
+    # Camera
     st.markdown('<div class="card"><div class="card-title">📷 Quét mã QR</div>', unsafe_allow_html=True)
-
     uploaded_file = st.file_uploader(
         "▶️ BẤM ĐỂ MỞ CAMERA CHỤP MÃ QR",
         type=["jpg", "jpeg", "png"],
         accept_multiple_files=False,
         key=f"cam_{st.session_state.form_key}"
     )
-
     if uploaded_file is not None:
         try:
             file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
             opencv_img = cv2.imdecode(file_bytes, 1)
-            detector = cv2.QRCodeDetector()
-            data, bbox, _ = detector.detectAndDecode(opencv_img)
+            detector   = cv2.QRCodeDetector()
+            data, _, _ = detector.detectAndDecode(opencv_img)
             if data:
                 if data != st.session_state.qr_detected:
                     st.session_state.qr_detected = data
@@ -140,22 +170,17 @@ with col_scan:
                     st.rerun()
             else:
                 st.error("❌ Không tìm thấy mã QR. Vui lòng chụp rõ hơn!")
-        except Exception as e:
-            st.error(f"Lỗi xử lý ảnh: {e}")
+        except Exception as ex:
+            st.error(f"Lỗi xử lý ảnh: {ex}")
 
     if st.session_state.qr_detected:
         st.success(f"✅ Nhận diện: **{st.session_state.qr_detected}**")
-
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # --- THÔNG TIN THAO TÁC ---
+    # Form
     st.markdown('<div class="card"><div class="card-title">📝 Thông tin thao tác</div>', unsafe_allow_html=True)
 
-    # =========================================================
-    # QUAN TRỌNG: Người vận hành & Công đoạn đặt NGOÀI st.form
-    # on_change cập nhật session_state ngay khi người dùng thay đổi
-    # → job_key được tính lại realtime → nút chuyển đúng trạng thái
-    # =========================================================
+    # Người vận hành & công đoạn NGOÀI form để cập nhật realtime
     def on_nguoibao_change():
         st.session_state.nguoibao_val = st.session_state["_nguoibao_input"]
 
@@ -167,35 +192,33 @@ with col_scan:
         value=st.session_state.nguoibao_val,
         key="_nguoibao_input",
         on_change=on_nguoibao_change,
-        placeholder="Gõ tên rồi Enter..."
+        placeholder="Gõ tên rồi Enter...",
+        disabled=st.session_state.submitting,
     )
-
     st.selectbox(
         "Công đoạn *",
         options=DANH_SACH_CONG_DOAN,
         index=DANH_SACH_CONG_DOAN.index(st.session_state.congdoan_val)
-               if st.session_state.congdoan_val in DANH_SACH_CONG_DOAN else 0,
+              if st.session_state.congdoan_val in DANH_SACH_CONG_DOAN else 0,
         key="_congdoan_input",
-        on_change=on_congdoan_change
+        on_change=on_congdoan_change,
+        disabled=st.session_state.submitting,
     )
 
-    # Tính trạng thái realtime
+    # Banner trạng thái realtime
     job_key_live, is_active_live = get_current_job_state()
-
-    # Banner trạng thái — cập nhật ngay khi gõ tên / đổi công đoạn
     if not st.session_state.qr_detected:
         st.info("📷 Vui lòng quét mã QR trước")
     elif not st.session_state.nguoibao_val.strip():
         st.info("👤 Gõ tên người vận hành để xác định trạng thái")
     elif is_active_live:
         job_info = st.session_state.active_jobs[job_key_live]
-        st.warning(f"🔄 **{st.session_state.nguoibao_val}** đang làm từ **{job_info['gio_bat_dau']}** → Xác nhận để **HOÀN THÀNH**")
+        st.warning(f"🔄 **{st.session_state.nguoibao_val}** đang làm từ **{job_info['gio_bat_dau']}** → Xác nhận **HOÀN THÀNH**")
     else:
-        st.info(f"🚀 **{st.session_state.nguoibao_val}** chưa bắt đầu → Xác nhận để **BẮT ĐẦU**")
+        st.info(f"🚀 **{st.session_state.nguoibao_val}** chưa bắt đầu → Xác nhận **BẮT ĐẦU**")
 
     mode_label = "🏁 HOÀN THÀNH" if is_active_live else "▶️ BẮT ĐẦU"
 
-    # Form chỉ còn: headcode (readonly display) + số lượng + nút submit
     with st.form(key=f"main_form_{st.session_state.form_key}", clear_on_submit=False):
         headcode = st.text_input(
             "Headcode *",
@@ -210,9 +233,11 @@ with col_scan:
             format="%.3f",
             key=f"soluong_{st.session_state.form_key}"
         )
+        # Nút bị disable khi đang submitting → ngăn bấm liên tiếp
         submit = st.form_submit_button(
-            label=f"💾 XÁC NHẬN — {mode_label}",
-            use_container_width=True
+            label="⏳ Đang xử lý..." if st.session_state.submitting else f"💾 XÁC NHẬN — {mode_label}",
+            use_container_width=True,
+            disabled=st.session_state.submitting,
         )
 
     st.markdown('</div>', unsafe_allow_html=True)
@@ -220,7 +245,7 @@ with col_scan:
     # =====================================================
     # XỬ LÝ SUBMIT
     # =====================================================
-    if submit:
+    if submit and not st.session_state.submitting:
         nguoibao = st.session_state.nguoibao_val.strip()
         congdoan  = st.session_state.congdoan_val
 
@@ -229,72 +254,84 @@ with col_scan:
         elif not nguoibao:
             st.error("Vui lòng điền Người vận hành.")
         else:
-            now_vn  = datetime.now(VN_TZ).strftime("%d/%m/%Y %H:%M:%S")
-            job_key = f"{headcode}|{congdoan}|{nguoibao.lower()}"
+            job_key   = f"{headcode}|{congdoan}|{nguoibao.lower()}"
             is_active = job_key in st.session_state.active_jobs
+
+            # ── Bật flag submitting ngay lập tức ──
+            st.session_state.submitting = True
 
             if not is_active:
                 # ---- BẮT ĐẦU ----
+                # Kiểm tra trùng trong session trước khi gọi API
                 payload = {
-                    "action": "start",
-                    "headcode": headcode,
-                    "congdoan": congdoan,
-                    "soluong": float(soluong),
-                    "nguoibao": nguoibao,
-                    "gio_bat_dau": now_vn,
+                    "action":     "start",
+                    "headcode":   headcode,
+                    "congdoan":   congdoan,
+                    "soluong":    float(soluong),
+                    "nguoibao":   nguoibao,
                 }
                 with st.spinner("Đang ghi nhận bắt đầu..."):
-                    try:
-                        resp = requests.post(WEB_APP_URL, json=payload)
-                        resp_json = resp.json() if resp.status_code == 200 else {}
-                        row_id = resp_json.get("row_id", "")
-                        st.session_state.active_jobs[job_key] = {
-                            "headcode": headcode,
-                            "congdoan": congdoan,
-                            "nguoibao": nguoibao,
-                            "soluong": float(soluong),
-                            "gio_bat_dau": now_vn,
-                            "row_id": row_id,
-                        }
-                        st.session_state.last_action = {"type": "start", "headcode": headcode, "congdoan": congdoan}
-                        st.session_state.qr_detected = ""
-                        st.session_state.soluong_val = 1.000
-                        # Giữ nguoibao_val và congdoan_val để lần quét tiếp không phải nhập lại
-                        st.session_state.form_key += 1
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Lỗi kết nối: {e}")
+                    ok, resp_data = call_api(payload)
+
+                if ok and resp_data.get("status") == "ok":
+                    row_id      = resp_data.get("row_id", "")
+                    gio_bat_dau = resp_data.get("gio_bat_dau", "")
+                    st.session_state.active_jobs[job_key] = {
+                        "headcode":    headcode,
+                        "congdoan":    congdoan,
+                        "nguoibao":    nguoibao,
+                        "soluong":     float(soluong),
+                        "gio_bat_dau": gio_bat_dau,
+                        "row_id":      row_id,
+                    }
+                    st.session_state.last_action  = {"type": "start", "headcode": headcode, "congdoan": congdoan}
+                    st.session_state.qr_detected  = ""
+                    st.session_state.soluong_val  = 1.000
+                    st.session_state.submitting   = False
+                    st.session_state.form_key    += 1
+                    st.rerun()
+                elif resp_data.get("status") == "duplicate":
+                    # Apps Script báo đã tồn tại → load lại danh sách
+                    st.warning("⚠️ Mã này đã được ghi nhận bắt đầu trước đó. Đang đồng bộ lại...")
+                    st.session_state.active_jobs  = fetch_active_jobs_from_sheet()
+                    st.session_state.submitting   = False
+                    st.session_state.form_key    += 1
+                    st.rerun()
+                else:
+                    st.session_state.submitting = False
+                    st.error(f"Lỗi: {resp_data.get('message', 'Không rõ')}")
+
             else:
                 # ---- HOÀN THÀNH ----
                 job_info = st.session_state.active_jobs[job_key]
-                payload = {
-                    "action": "finish",
-                    "headcode": headcode,
-                    "congdoan": congdoan,
-                    "soluong": float(soluong),
-                    "nguoibao": nguoibao,
-                    "gio_bat_dau": job_info["gio_bat_dau"],
-                    "gio_hoan_thanh": now_vn,
-                    "row_id": job_info.get("row_id", ""),
+                payload  = {
+                    "action":         "finish",
+                    "headcode":       headcode,
+                    "congdoan":       congdoan,
+                    "soluong":        float(soluong),
+                    "nguoibao":       nguoibao,
+                    "gio_bat_dau":    job_info["gio_bat_dau"],
+                    "gio_hoan_thanh": datetime.now(VN_TZ).strftime("%d/%m/%Y %H:%M:%S"),
+                    "row_id":         job_info.get("row_id", ""),
                 }
                 with st.spinner("Đang cập nhật hoàn thành..."):
-                    try:
-                        resp = requests.post(WEB_APP_URL, json=payload)
-                        if resp.status_code == 200:
-                            del st.session_state.active_jobs[job_key]
-                            st.session_state.last_action = {"type": "finish", "headcode": headcode, "congdoan": congdoan}
-                            st.session_state.qr_detected = ""
-                            st.session_state.soluong_val = 1.000
-                            st.session_state.form_key += 1
-                            st.rerun()
-                        else:
-                            st.error(f"Lỗi server: {resp.status_code}")
-                    except Exception as e:
-                        st.error(f"Lỗi kết nối: {e}")
+                    ok, resp_data = call_api(payload)
 
-# =====================================================
-# CỘT PHẢI: TRẠNG THÁI
-# =====================================================
+                if ok and resp_data.get("status") == "ok":
+                    del st.session_state.active_jobs[job_key]
+                    st.session_state.last_action  = {"type": "finish", "headcode": headcode, "congdoan": congdoan}
+                    st.session_state.qr_detected  = ""
+                    st.session_state.soluong_val  = 1.000
+                    st.session_state.submitting   = False
+                    st.session_state.form_key    += 1
+                    st.rerun()
+                else:
+                    st.session_state.submitting = False
+                    st.error(f"Lỗi: {resp_data.get('message', 'Không rõ')}")
+
+# ─────────────────────────────────────────────────
+# CỘT PHẢI — DANH SÁCH ĐANG XỬ LÝ
+# ─────────────────────────────────────────────────
 with col_active:
 
     if st.session_state.last_action:
@@ -314,20 +351,26 @@ with col_active:
     if not active_jobs:
         st.markdown('<p style="color:#64748b; font-size:0.85rem; font-family:IBM Plex Mono,monospace;">— Chưa có công việc nào đang chạy —</p>', unsafe_allow_html=True)
     else:
-        for jk, job in active_jobs.items():
-            st.markdown(f"""
-            <div class="job-row">
-                <div>
+        for jk, job in list(active_jobs.items()):
+            # Mỗi job card: thông tin + nút Hoàn thành inline
+            c_info, c_btn = st.columns([3, 1])
+            with c_info:
+                st.markdown(f"""
+                <div class="job-row">
                     <div class="job-headcode">{job['headcode']}</div>
                     <div class="job-meta">{job['congdoan']}</div>
                     <div class="job-meta">👤 {job['nguoibao']} &nbsp;|&nbsp; 📦 {job.get('soluong', 0):.3f}</div>
+                    <div class="job-meta" style="color:#64748b; font-size:0.72rem;">🕐 {job['gio_bat_dau']}</div>
                 </div>
-                <div class="job-time">
-                    <span class="badge-doing">ĐANG LÀM</span><br/>
-                    <span style="margin-top:6px;display:block">{job['gio_bat_dau']}</span>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
+            with c_btn:
+                # Nút bấm trực tiếp → prefill form bên trái rồi rerun
+                btn_key = f"finish_btn_{jk}"
+                if st.button("✅ Xong", key=btn_key, use_container_width=True):
+                    st.session_state.prefill_headcode = job["headcode"]
+                    st.session_state.prefill_nguoibao = job["nguoibao"]
+                    st.session_state.prefill_congdoan = job["congdoan"]
+                    st.rerun()
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -335,9 +378,10 @@ with col_active:
     <div class="card">
         <div class="card-title">📖 Hướng dẫn</div>
         <div style="font-size:0.82rem; color:#94a3b8; line-height:1.8;">
-            <b style="color:#f59e0b">Lần quét 1</b> → <span style="color:#4ade80">BẮT ĐẦU</span> — ghi giờ vào Sheet<br/>
-            <b style="color:#818cf8">Lần quét 2</b> → <span style="color:#818cf8">HOÀN THÀNH</span> — cập nhật giờ xong<br/><br/>
-            <span style="color:#64748b">⚠ Khi mở lại app, danh sách đang làm<br/>được tự động khôi phục từ Google Sheet</span>
+            <b style="color:#f59e0b">Lần quét 1</b> → <span style="color:#4ade80">BẮT ĐẦU</span><br/>
+            <b style="color:#818cf8">Lần quét 2</b> → <span style="color:#818cf8">HOÀN THÀNH</span><br/>
+            <b style="color:#00e5a0">Nút ✅ Xong</b> → Chọn nhanh từ danh sách<br/><br/>
+            <span style="color:#64748b">⚠ Danh sách tự khôi phục khi mở lại app</span>
         </div>
     </div>
     """, unsafe_allow_html=True)
