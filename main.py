@@ -1,3 +1,14 @@
+import subprocess
+import sys
+
+# Khối mã tự động kiểm tra và cài đặt thư viện camera trực tiếp trên Cloud nếu bị thiếu
+try:
+    from streamlit_camera_input_live import camera_input_live
+except ModuleNotFoundError:
+    # Ép máy chủ tự tải thư viện về cài đặt lập tức mà không cần qua requirements.txt
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "streamlit-camera-input-live", "opencv-python-headless"])
+    from streamlit_camera_input_live import camera_input_live
+
 import streamlit as st
 import requests
 from datetime import datetime, date
@@ -5,7 +16,6 @@ from zoneinfo import ZoneInfo
 import time
 import hashlib
 from streamlit_cookies_manager import EncryptedCookieManager
-from streamlit_camera_input_live import camera_input_live 
 from PIL import Image
 import cv2
 import numpy as np
@@ -22,7 +32,7 @@ def normalize_role(role_str: str) -> str:
     s = s.replace(' ', '')
     return s
 
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycby1wv7X459Jr_w5X0JgMTHWkZKOhHCDH6WkhWHzmleyI1hnTCWkxXIKASXCt7jA5ThZqQ/exec"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxB9cagxYoxM8kpbLtkFGKoQ6SND4QNqLbPTwFR1fs0bNUH-KNDFSaYtrTxKJ8VadEv8g/exec"
 VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 DANH_SACH_CONG_DOAN = [
