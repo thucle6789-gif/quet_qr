@@ -11,7 +11,7 @@ from streamlit_cookies_manager import EncryptedCookieManager
 # =====================================================
 # CẤU HÌNH
 # =====================================================
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxvwuD1SFZ8R1BzbccOC2-ZmUaHxRN4vOkmkghM_mFmUlnpx9ZO7GC4ZCktJwnfpVH1/exec"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwsuFMJiwHs9fKrljvllFsZs1TXvLadY2upoHm0dfp4sXcHVuesjYkoQl7oIjxHNkF6LA/exec"
 VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 DANH_SACH_CONG_DOAN = [
@@ -170,6 +170,7 @@ defaults = {
     "search_query":       "",
     "search_results":     [],
     "cookie_checked":     False,
+    "current_role":       "",   # "sản xuất" | "người xem"
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -194,11 +195,13 @@ if st.session_state.get("logged_in") is not True:
             saved_user = cookie.get("qr_user", "") or ""
             saved_ten  = cookie.get("qr_ten",  "") or ""
             saved_date = cookie.get("qr_date", "") or ""
+            saved_role = cookie.get("qr_role", "") or ""
             today_str  = date.today().strftime("%Y-%m-%d")
             if saved_user and saved_ten and saved_date == today_str:
                 st.session_state.logged_in          = True
                 st.session_state.current_user       = saved_user
                 st.session_state.current_ten        = saved_ten
+                st.session_state.current_role       = saved_role
                 st.session_state.nguoibao_val       = saved_ten
                 st.session_state.active_jobs_loaded = False
                 st.rerun()
@@ -238,17 +241,20 @@ if not st.session_state.logged_in:
                 with st.spinner("Đang xác thực..."):
                     result = do_login(user_input.strip(), pass_input.strip())
                 if result and result.get("status") == "ok":
-                    _user = result.get("user", user_input.strip())
-                    _ten  = result.get("ten",  user_input.strip())
+                    _user  = result.get("user", user_input.strip())
+                    _ten   = result.get("ten",  user_input.strip())
+                    _role  = result.get("role", "").strip().lower()
                     _today = date.today().strftime("%Y-%m-%d")
                     # Lưu cookie (hết hạn sau 1 ngày)
                     cookie["qr_user"] = _user
                     cookie["qr_ten"]  = _ten
+                    cookie["qr_role"] = _role
                     cookie["qr_date"] = _today
                     cookie.save()
                     st.session_state.logged_in          = True
                     st.session_state.current_user       = _user
                     st.session_state.current_ten        = _ten
+                    st.session_state.current_role       = _role
                     st.session_state.nguoibao_val       = _ten
                     st.session_state.login_error        = ""
                     st.session_state.active_jobs_loaded = False
@@ -278,15 +284,21 @@ with col_h1:
         </div>
     </div>""", unsafe_allow_html=True)
 with col_h2:
+    _role_label = "🏭 SẢN XUẤT" if st.session_state.current_role == "sản xuất" else "👁 NGƯỜI XEM"
+    _role_color = "#00e5a0" if st.session_state.current_role == "sản xuất" else "#f59e0b"
     st.markdown(f"""
-    <div style="padding:18px 0; text-align:right;">
+    <div style="padding:18px 0; text-align:right; display:flex; gap:8px; justify-content:flex-end; align-items:center;">
         <span class="user-badge">👤 {st.session_state.current_ten}</span>
+        <span style="background:#1a1f2e; border:1px solid {_role_color}; border-radius:20px;
+                     padding:6px 14px; font-size:0.75rem; color:{_role_color};
+                     font-family:'IBM Plex Mono',monospace;">{_role_label}</span>
     </div>""", unsafe_allow_html=True)
     if st.button("🚪 Đăng xuất", use_container_width=True):
         # Xóa cookie khi đăng xuất
         try:
             cookie["qr_user"] = ""
             cookie["qr_ten"]  = ""
+            cookie["qr_role"] = ""
             cookie["qr_date"] = ""
             cookie.save()
         except Exception:
@@ -345,8 +357,24 @@ col_scan, col_active = st.columns([1.1, 0.9], gap="large")
 # CỘT TRÁI
 # ─────────────────────────────────────────────────
 with col_scan:
-    # Camera
-    st.markdown('<div class="card"><div class="card-title">📷 Quét mã QR</div>', unsafe_allow_html=True)
+    # ── Kiểm tra quyền ──
+    _is_san_xuat = st.session_state.current_role == "sản xuất"
+
+    if not _is_san_xuat:
+        st.markdown("""
+        <div style="background:#2d1a0a; border:1px solid #f59e0b; border-radius:10px;
+                    padding:20px 24px; text-align:center; margin-bottom:16px;">
+            <div style="font-family:'IBM Plex Mono',monospace; color:#f59e0b;
+                        font-size:1rem; letter-spacing:2px; margin-bottom:8px;">👁 CHẾ ĐỘ XEM</div>
+            <div style="color:#94a3b8; font-size:0.85rem;">
+                Tài khoản của bạn chỉ có quyền <b style="color:#f59e0b">tra cứu</b>.<br/>
+                Liên hệ quản trị viên để được cấp quyền sản xuất.
+            </div>
+        </div>""", unsafe_allow_html=True)
+
+    if _is_san_xuat:
+        # Camera
+        st.markdown('<div class="card"><div class="card-title">📷 Quét mã QR</div>', unsafe_allow_html=True)
     uploaded_file = st.file_uploader("▶️ BẤM ĐỂ MỞ CAMERA CHỤP MÃ QR",
         type=["jpg","jpeg","png"], accept_multiple_files=False,
         key=f"cam_{st.session_state.form_key}")
@@ -528,6 +556,8 @@ with col_scan:
                     st.rerun()
                 else:
                     st.error(f"Lỗi: {resp_data.get('message','Không rõ')}")
+
+    # end if _is_san_xuat
 
 # ─────────────────────────────────────────────────
 # CỘT PHẢI
