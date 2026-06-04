@@ -9,7 +9,7 @@ import time
 # =====================================================
 # CẤU HÌNH
 # =====================================================
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwRNXOCYJ78rVh7EBYNSAC_eSkZL3lMYxI6OimsOQGNUUR4Uav8_HcLzuvJvl7h6vbkVg/exec"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyb03gkCikQtY9BtLcGBs25283b9eWXzAEzvKpuGFJvv0NiMjZrlEJcqEuHoDBp6zLGnA/exec"
 VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 DANH_SACH_CONG_DOAN = [
@@ -62,9 +62,52 @@ st.markdown("""
 # =====================================================
 # HÀM GỌI API
 # =====================================================
-def fetch_active_jobs_from_sheet():
+# =====================================================
+# Cache DATA 24h — chỉ gọi API 1 lần khi app khởi động
+# Khi DATA có mã mới → bấm "Làm mới dữ liệu DATA" để clear cache
+# =====================================================
+DATA_CACHE_TTL = 86400  # 24 giờ
+
+@st.cache_data(ttl=DATA_CACHE_TTL, show_spinner=False)
+def fetch_init_data():
+    """
+    Gọi 1 request DUY NHẤT khi app khởi động, lấy cả:
+    - active_jobs (danh sách đang làm từ QR_Log)
+    - records (toàn bộ mã hợp lệ từ DATA)
+    Tránh 2 request song song gây tranh lock Apps Script.
+    """
     try:
-        resp = requests.get(WEB_APP_URL + "?action=get_active", timeout=10)
+        resp = requests.get(
+            WEB_APP_URL,
+            params={"action": "init"},
+            timeout=60  # DATA lớn, cần thời gian
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get("status") == "ok":
+                # Build dict headcode → info
+                hc_dict = {}
+                for row in data.get("records", []):
+                    hc = str(row[0]).strip()
+                    if hc:
+                        hc_dict[hc] = {
+                            "ten_cong_trinh": row[1],
+                            "ten_san_pham":   row[2],
+                        }
+                loaded_at = datetime.now(VN_TZ).strftime("%d/%m/%Y %H:%M")
+                return {
+                    "active_jobs_raw": data.get("active_jobs", []),
+                    "hc_dict":         hc_dict,
+                    "loaded_at":       loaded_at,
+                }
+    except Exception:
+        pass
+    return None
+
+def fetch_active_jobs_from_sheet():
+    """Gọi riêng get_active khi cần refresh danh sách (bấm nút làm mới)."""
+    try:
+        resp = requests.get(WEB_APP_URL + "?action=get_active", timeout=15)
         if resp.status_code == 200:
             data = resp.json()
             jobs = {}
@@ -86,47 +129,13 @@ def call_api(payload):
     except Exception as ex:
         return False, {"message": str(ex)}
 
-# Cache 24h — phù hợp với DATA cập nhật 2-3 ngày/lần
-# Khi update DATA mới, bấm nút "Làm mới dữ liệu" để xóa cache thủ công
-DATA_CACHE_TTL = 86400  # 24 giờ
-
-@st.cache_data(ttl=DATA_CACHE_TTL, show_spinner=False)
-def load_data_cache():
-    """
-    Load toàn bộ cột A+F+H từ sheet DATA về dict Python.
-    Cache 24h, tự refresh hoặc xóa thủ công qua nút Làm mới dữ liệu.
-    Trả về: (dict, loaded_at) hoặc (None, None) nếu lỗi
-    """
-    try:
-        resp = requests.get(
-            WEB_APP_URL,
-            params={"action": "load_data"},
-            timeout=30
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            if data.get("status") == "ok":
-                result = {}
-                for row in data.get("records", []):
-                    hc = str(row[0]).strip()
-                    if hc:
-                        result[hc] = {
-                            "ten_cong_trinh": row[1],
-                            "ten_san_pham":   row[2],
-                        }
-                loaded_at = datetime.now(VN_TZ).strftime("%d/%m/%Y %H:%M")
-                return result, loaded_at
-    except Exception:
-        pass
-    return None, None
-
 def lookup_in_cache(headcode: str):
-    """Tra cứu headcode trong cache. Trả về dict info hoặc None (lỗi) hoặc not_found."""
-    cache, _ = load_data_cache()
-    if cache is None:
-        return None   # Lỗi kết nối
-    hc = str(headcode).strip()
-    info = cache.get(hc)
+    """Tra cứu headcode trong cache dict. < 1ms, không gọi API."""
+    init = fetch_init_data()
+    if init is None:
+        return None  # Lỗi kết nối
+    hc   = str(headcode).strip()
+    info = init["hc_dict"].get(hc)
     if info:
         return {"status": "found", **info}
     return {"status": "not_found"}
@@ -160,8 +169,16 @@ for k, v in defaults.items():
 
 # Load active jobs lần đầu
 if not st.session_state.active_jobs_loaded:
-    with st.spinner("🔄 Đang đồng bộ trạng thái từ hệ thống..."):
-        st.session_state.active_jobs = fetch_active_jobs_from_sheet()
+    with st.spinner("🔄 Đang khởi động hệ thống (lần đầu có thể mất 10-20s)..."):
+        init_data = fetch_init_data()
+        if init_data:
+            jobs = {}
+            for item in init_data.get("active_jobs_raw", []):
+                jk = f"{item['headcode']}|{item['congdoan']}|{item['nguoibao'].strip().lower()}"
+                jobs[jk] = item
+            st.session_state.active_jobs = jobs
+        else:
+            st.session_state.active_jobs = {}
         st.session_state.active_jobs_loaded = True
 
 # =====================================================
@@ -484,14 +501,15 @@ with col_active:
     with col_r2:
         if st.button("🗄️ Làm mới dữ liệu DATA", use_container_width=True):
             # Xóa cache Streamlit → lần lookup tiếp sẽ load lại từ Sheet
-            load_data_cache.clear()
+            fetch_init_data.clear()
             st.session_state.lookup_headcode = ""
             st.session_state.lookup_result   = None
             st.success("✅ Đã xóa cache, dữ liệu sẽ được tải lại!")
             st.rerun()
 
     # Hiển thị thời gian cache DATA
-    _, loaded_at = load_data_cache()
+    init_info = fetch_init_data()
+    loaded_at = init_info["loaded_at"] if init_info else None
     if loaded_at:
         st.markdown(
             f'<div style="font-size:0.72rem; color:#64748b; text-align:center; margin-bottom:8px;">'
