@@ -1,7 +1,5 @@
 import streamlit as st
 import requests
-import cv2
-import numpy as np
 from datetime import datetime, date
 from zoneinfo import ZoneInfo
 import time
@@ -391,31 +389,166 @@ with col_scan:
         # SẢN XUẤT: toàn bộ chức năng quét & ghi nhận
         # ══════════════════════════════════════════
 
-        # Camera
+        # ── QR Scanner dùng html5-qrcode (quét realtime, không cần chụp ảnh) ──
         st.markdown('<div class="card"><div class="card-title">📷 Quét mã QR</div>', unsafe_allow_html=True)
-        uploaded_file = st.file_uploader("▶️ BẤM ĐỂ MỞ CAMERA CHỤP MÃ QR",
-            type=["jpg","jpeg","png"], accept_multiple_files=False,
-            key=f"cam_{st.session_state.form_key}")
-        if uploaded_file is not None:
-            try:
-                file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
-                opencv_img = cv2.imdecode(file_bytes, 1)
-                detector   = cv2.QRCodeDetector()
-                data, _, _ = detector.detectAndDecode(opencv_img)
-                if data:
-                    if data != st.session_state.qr_detected:
-                        st.session_state.qr_detected  = data
-                        st.session_state.headcode_val = data
-                        result = lookup_in_cache(data)
-                        st.session_state.lookup_headcode = data
-                        st.session_state.lookup_result   = result
-                        st.session_state.form_key += 1
-                        st.rerun()
-                else:
-                    st.error("❌ Không tìm thấy mã QR. Vui lòng chụp rõ hơn!")
-            except Exception as ex:
-                st.error(f"Lỗi: {ex}")
 
+        # ── QR: dùng native camera của điện thoại + jsQR decode local ──
+        # Cách hoạt động:
+        #   1. Người dùng bấm nút → mở camera native (capture="environment")
+        #   2. Chụp ảnh → jsQR decode ngay trên trình duyệt (không upload)
+        #   3. Kết quả gửi về Streamlit qua st.query_params (reload nhẹ)
+        # Ưu điểm: dùng camera hệ thống thật, nhanh, không cần WebRTC permission
+
+        # Đọc kết quả QR từ query param (do JS set sau khi decode)
+        _qr_from_url = st.query_params.get("qr", "")
+        if _qr_from_url and _qr_from_url != st.session_state.headcode_val:
+            st.session_state.headcode_val    = _qr_from_url
+            st.session_state.qr_detected     = _qr_from_url
+            result = lookup_in_cache(_qr_from_url)
+            st.session_state.lookup_headcode = _qr_from_url
+            st.session_state.lookup_result   = result
+            st.session_state.form_key       += 1
+            # Xóa query param khỏi URL sau khi đã đọc
+            st.query_params.clear()
+            st.rerun()
+
+        _current_url_qr = st.query_params.get("qr", "")
+
+        qr_component = st.components.v1.html(f"""
+<!DOCTYPE html>
+<html>
+<head>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+<style>
+  * {{ box-sizing: border-box; }}
+  body {{ margin:0; background:transparent; font-family:'IBM Plex Sans',sans-serif; }}
+  #qr-wrap {{ display:flex; flex-direction:column; align-items:center; gap:10px; padding:4px 0; }}
+
+  /* Nút chính: mở camera native */
+  #btn-capture {{
+    width:100%; max-width:360px; padding:15px;
+    background:linear-gradient(135deg,#00e5a0,#00b37e);
+    color:#0f1117; border:none; border-radius:10px;
+    font-family:'IBM Plex Mono',monospace; font-weight:700;
+    font-size:1rem; letter-spacing:1px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; gap:10px;
+  }}
+  #btn-capture:active {{ opacity:0.85; transform:scale(0.98); }}
+
+  /* Input file ẩn — kích hoạt camera native */
+  #file-input {{
+    position:absolute; width:1px; height:1px; opacity:0; pointer-events:none;
+  }}
+
+  #status {{
+    font-size:0.82rem; color:#64748b; text-align:center;
+    font-family:'IBM Plex Mono',monospace; min-height:20px;
+  }}
+  #result-box {{
+    width:100%; max-width:360px; padding:14px 18px;
+    background:#0f2d1f; border:2px solid #00e5a0; border-radius:10px;
+    font-family:'IBM Plex Mono',monospace; font-size:1.05rem;
+    color:#00e5a0; font-weight:700; display:none; text-align:center;
+    animation: fadeIn 0.3s ease;
+  }}
+  #err-box {{
+    width:100%; max-width:360px; padding:12px 16px;
+    background:#2d1a0a; border:1px solid #f59e0b; border-radius:8px;
+    font-size:0.82rem; color:#f59e0b; display:none; text-align:center;
+    font-family:'IBM Plex Mono',monospace;
+  }}
+  #canvas {{ display:none; }}
+  @keyframes fadeIn {{ from{{opacity:0;transform:translateY(-4px)}} to{{opacity:1;transform:translateY(0)}} }}
+
+  .hint {{
+    font-size:0.72rem; color:#475569; text-align:center; max-width:300px; line-height:1.5;
+  }}
+</style>
+</head>
+<body>
+<div id="qr-wrap">
+
+  <!-- Input file ẩn: capture="environment" → mở camera sau của điện thoại -->
+  <input type="file" id="file-input" accept="image/*" capture="environment">
+
+  <button id="btn-capture" onclick="openCamera()">
+    <span style="font-size:1.3rem">📷</span>
+    CHỤP CAMERA QUÉT QR
+  </button>
+
+  <div id="status"></div>
+  <div id="result-box"></div>
+  <div id="err-box"></div>
+  <canvas id="canvas"></canvas>
+
+  <div class="hint">
+    Bấm nút → Camera mở → Chụp mã QR → Tự động điền
+  </div>
+</div>
+
+<script>
+var fileInput = document.getElementById("file-input");
+
+function openCamera() {{
+  // Reset để có thể chụp lại cùng ảnh
+  fileInput.value = "";
+  fileInput.click();
+}}
+
+fileInput.addEventListener("change", function(e) {{
+  var file = e.target.files[0];
+  if (!file) return;
+
+  var status = document.getElementById("status");
+  var resultBox = document.getElementById("result-box");
+  var errBox = document.getElementById("err-box");
+
+  resultBox.style.display = "none";
+  errBox.style.display = "none";
+  status.innerText = "⏳ Đang xử lý ảnh...";
+
+  var reader = new FileReader();
+  reader.onload = function(ev) {{
+    var img = new Image();
+    img.onload = function() {{
+      var canvas = document.getElementById("canvas");
+      // Scale xuống nếu ảnh quá lớn (tăng tốc decode)
+      var maxDim = 1200;
+      var scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      canvas.width  = Math.round(img.width  * scale);
+      canvas.height = Math.round(img.height * scale);
+      var ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      var code = jsQR(imageData.data, imageData.width, imageData.height, {{
+        inversionAttempts: "dontInvert"
+      }});
+      if (code) {{
+        var qrText = code.data.trim();
+        status.innerText = "";
+        resultBox.style.display = "block";
+        resultBox.innerText = "✅ " + qrText;
+        // Gửi về Streamlit bằng cách set query param rồi reload
+        var url = new URL(window.parent.location.href);
+        url.searchParams.set("qr", qrText);
+        window.parent.location.href = url.toString();
+      }} else {{
+        status.innerText = "";
+        errBox.style.display = "block";
+        errBox.innerText = "❌ Không tìm thấy QR trong ảnh. Hãy chụp lại gần hơn và rõ hơn.";
+      }}
+    }};
+    img.src = ev.target.result;
+  }};
+  reader.readAsDataURL(file);
+}});
+</script>
+</body>
+</html>
+""", height=200, scrolling=False)
+
+        # Nhận mã QR từ component qua st.query_params hoặc text_input ẩn
+        # Dùng text_input để người dùng có thể nhập tay nếu cần
         if st.session_state.lookup_result and st.session_state.lookup_result.get("status") == "found":
             r = st.session_state.lookup_result
             st.success(f"✅ **{st.session_state.lookup_headcode}** — {r.get('ten_san_pham','')}")
