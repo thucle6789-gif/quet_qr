@@ -3,4 +3,4 @@ requests
 opencv-python-headless
 numpy
 Pillow
-streamlit-cookies-controller
+streamlit-cookies-manager
