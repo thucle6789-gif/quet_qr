@@ -144,6 +144,7 @@ defaults = {
     "last_submit_key":    "",   # Chặn double-submit
     "last_submit_time":   0.0,
     # Kết quả lookup headcode từ sheet DATA
+    "headcode_val":       "",   # giá trị ô headcode realtime (ngoài form)
     "lookup_headcode":    "",   # headcode đã lookup
     "lookup_result":      None, # dict {status, ten_cong_trinh, ten_san_pham} hoặc None
     "prefill_headcode":   "",
@@ -166,6 +167,7 @@ if not st.session_state.active_jobs_loaded:
 # =====================================================
 if st.session_state.prefill_headcode:
     st.session_state.qr_detected    = st.session_state.prefill_headcode
+    st.session_state.headcode_val    = st.session_state.prefill_headcode
     st.session_state.nguoibao_val   = st.session_state.prefill_nguoibao
     st.session_state.congdoan_val   = st.session_state.prefill_congdoan
     st.session_state.prefill_headcode = ""
@@ -213,6 +215,7 @@ with col_scan:
             if data:
                 if data != st.session_state.qr_detected:
                     st.session_state.qr_detected = data
+                    st.session_state.headcode_val = data
                     st.session_state.form_key += 1
                     st.rerun()
             else:
@@ -220,28 +223,11 @@ with col_scan:
         except Exception as ex:
             st.error(f"Lỗi xử lý ảnh: {ex}")
 
-    if st.session_state.qr_detected:
-        hc = st.session_state.qr_detected.strip()
-        # ✅ Tự động lookup ngay khi headcode thay đổi (không đợi đến submit)
-        if hc != st.session_state.lookup_headcode:
-            with st.spinner("🔍 Đang kiểm tra mã..."):
-                result = lookup_in_cache(hc)
-            st.session_state.lookup_headcode = hc
-            st.session_state.lookup_result   = result
-            if result and result.get("status") == "not_found":
-                st.session_state.qr_detected     = ""
-                st.session_state.lookup_headcode = ""
-                st.session_state.lookup_result   = None
-                st.session_state.form_key += 1
-                st.error(f"❌ Mã **{hc}** không tồn tại trong hệ thống!")
-                st.rerun()
-
-        if st.session_state.lookup_result and st.session_state.lookup_result.get("status") == "found":
-            st.success(f"✅ Nhận diện: **{hc}**")
-        elif st.session_state.lookup_result is None:
-            st.warning("⚠️ Không thể kết nối kiểm tra mã. Vui lòng thử lại.")
-            st.session_state.qr_detected     = ""
-            st.session_state.lookup_headcode = ""
+    if st.session_state.lookup_result and st.session_state.lookup_result.get("status") == "found":
+        r = st.session_state.lookup_result
+        st.success(f"✅ **{st.session_state.lookup_headcode}** — {r.get('ten_san_pham','')}")
+    elif st.session_state.lookup_headcode:
+        st.error(f"❌ Mã **{st.session_state.lookup_headcode}** không tồn tại!")
     st.markdown('</div>', unsafe_allow_html=True)
 
     # Form
@@ -298,8 +284,8 @@ with col_scan:
 
     # Banner trạng thái realtime
     job_key_live, is_active_live = get_current_job_state()
-    if not st.session_state.qr_detected:
-        st.info("📷 Vui lòng quét mã QR trước")
+    if not st.session_state.headcode_val.strip():
+        st.info("📷 Quét QR hoặc nhập tay Headcode")
     elif not st.session_state.nguoibao_val.strip():
         st.info("👤 Gõ tên người vận hành để xác định trạng thái")
     elif is_active_live:
@@ -310,12 +296,36 @@ with col_scan:
 
     mode_label = "🏁 HOÀN THÀNH" if is_active_live else "▶️ BẮT ĐẦU"
 
+    # ── Headcode NGOÀI form để on_change trigger lookup realtime ──
+    _hc_key = f"_headcode_{st.session_state.form_key}"
+
+    def on_headcode_change():
+        new_hc = st.session_state[_hc_key].strip()
+        st.session_state.headcode_val    = new_hc
+        st.session_state.qr_detected     = new_hc
+        # Reset lookup để trigger lại
+        st.session_state.lookup_headcode = ""
+        st.session_state.lookup_result   = None
+
+    st.text_input(
+        "Headcode *",
+        value=st.session_state.headcode_val,
+        key=_hc_key,
+        on_change=on_headcode_change,
+        placeholder="Quét QR hoặc nhập tay...",
+    )
+
+    # Lookup ngay sau widget — chạy mỗi khi headcode_val thay đổi
+    hc_live = st.session_state.headcode_val.strip()
+    if hc_live and hc_live != st.session_state.lookup_headcode:
+        with st.spinner("🔍 Đang kiểm tra mã..."):
+            result = lookup_in_cache(hc_live)
+        st.session_state.lookup_headcode = hc_live
+        st.session_state.lookup_result   = result
+
     with st.form(key=f"main_form_{st.session_state.form_key}", clear_on_submit=False):
-        headcode = st.text_input(
-            "Headcode *",
-            value=st.session_state.qr_detected,
-            key=f"headcode_{st.session_state.form_key}"
-        )
+        # Headcode chỉ hiển thị readonly trong form để truyền vào submit
+        headcode = st.session_state.headcode_val.strip()
         soluong = st.number_input(
             "Số lượng",
             min_value=0.000,
