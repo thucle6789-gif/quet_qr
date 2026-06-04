@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 import time
 import hashlib
 from streamlit_cookies_manager import EncryptedCookieManager
-from streamlit_camera_input_live import camera_input_live # Thư viện camera trực tiếp chạy mượt trên Mobile
+from streamlit_camera_input_live import camera_input_live 
 from PIL import Image
 import cv2
 import numpy as np
@@ -64,12 +64,12 @@ html, body, [class*="css"] { font-family: 'IBM Plex Sans', sans-serif; backgroun
 """, unsafe_allow_html=True)
 
 # =====================================================
-# API FUNCTIONS & QR DECODER
+# API FUNCTIONS & QR DECODER (DÙNG OPENCV NGUYÊN BẢN)
 # =====================================================
 DATA_CACHE_TTL = 86400
 
 def decode_qr_from_image(image_bytes):
-    """Sử dụng OpenCV để quét mã QR trực tiếp từ dữ liệu ảnh của camera truyền về"""
+    """Sử dụng thuật toán của OpenCV để nhận diện mã QR độc lập"""
     try:
         file_bytes = np.asarray(bytearray(image_bytes.read()), dtype=np.uint8)
         opencv_img = cv2.imdecode(file_bytes, 1)
@@ -267,10 +267,9 @@ with col_scan:
     if normalize_role(st.session_state.current_role) != "sanxuat":
         st.warning("👁 CHẾ ĐỘ XEM: Tài khoản của bạn không có quyền quét hàng.")
     else:
-        # Khung quét QR bằng camera_input_live hoàn toàn mới không bị chặn quyền
         st.markdown('<div class="card"><div class="card-title">📷 CAMERA QUÉT MÃ QR TRỰC TIẾP</div>', unsafe_allow_html=True)
         
-        # Gọi camera trực tiếp độ trễ thấp
+        # Gọi luồng video camera trực tiếp độ trễ thấp
         image_capture = camera_input_live(key=f"live_cam_{st.session_state.form_key}")
         
         if image_capture:
