@@ -9,7 +9,7 @@ import time
 # =====================================================
 # CẤU HÌNH
 # =====================================================
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxHp38uIaMKqxWhqzriq0fS98RUZY4qRss9pAtTyd2OIn4x_u4nTeu31sY8vOrVsjOZ8g/exec"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwRNXOCYJ78rVh7EBYNSAC_eSkZL3lMYxI6OimsOQGNUUR4Uav8_HcLzuvJvl7h6vbkVg/exec"
 VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 DANH_SACH_CONG_DOAN = [
@@ -86,19 +86,47 @@ def call_api(payload):
     except Exception as ex:
         return False, {"message": str(ex)}
 
-def lookup_headcode(headcode: str):
-    """Tra cứu headcode trong sheet DATA. Trả về dict hoặc None nếu lỗi kết nối."""
+DATA_CACHE_TTL = 600  # Giây — refresh cache sau 10 phút
+
+@st.cache_data(ttl=DATA_CACHE_TTL, show_spinner=False)
+def load_data_cache():
+    """
+    Load toàn bộ cột A+F+H từ sheet DATA về dict Python.
+    Streamlit tự cache 10 phút, sau đó tự gọi lại.
+    Trả về: dict { "250911878": {"ten_cong_trinh": ..., "ten_san_pham": ...} }
+    """
     try:
         resp = requests.get(
             WEB_APP_URL,
-            params={"action": "lookup", "headcode": headcode.strip()},
-            timeout=10
+            params={"action": "load_data"},
+            timeout=30   # Lần đầu load 80k dòng có thể cần ~5-10s
         )
         if resp.status_code == 200:
-            return resp.json()
+            data = resp.json()
+            if data.get("status") == "ok":
+                result = {}
+                for row in data.get("records", []):
+                    hc = str(row[0]).strip()
+                    if hc:
+                        result[hc] = {
+                            "ten_cong_trinh": row[1],
+                            "ten_san_pham":   row[2],
+                        }
+                return result
     except Exception:
         pass
-    return None
+    return None   # None = lỗi kết nối (khác với {} = load được nhưng trống)
+
+def lookup_in_cache(headcode: str):
+    """Tra cứu headcode trong cache. Trả về dict info hoặc None (lỗi) hoặc False (not found)."""
+    cache = load_data_cache()
+    if cache is None:
+        return None   # Lỗi kết nối
+    hc = str(headcode).strip()
+    info = cache.get(hc)
+    if info:
+        return {"status": "found", **info}
+    return {"status": "not_found"}
 
 # =====================================================
 # SESSION STATE INIT
@@ -197,7 +225,7 @@ with col_scan:
         # ✅ Tự động lookup ngay khi headcode thay đổi (không đợi đến submit)
         if hc != st.session_state.lookup_headcode:
             with st.spinner("🔍 Đang kiểm tra mã..."):
-                result = lookup_headcode(hc)
+                result = lookup_in_cache(hc)
             st.session_state.lookup_headcode = hc
             st.session_state.lookup_result   = result
             if result and result.get("status") == "not_found":
