@@ -371,207 +371,209 @@ col_scan, col_active = st.columns([1.1, 0.9], gap="large")
 # CỘT TRÁI
 # ─────────────────────────────────────────────────
 with col_scan:
-    # ── Kiểm tra quyền ──
     _is_san_xuat = normalize_role(st.session_state.current_role) == "sanxuat"
 
     if not _is_san_xuat:
+        # ── NGƯỜI XEM: chỉ hiện thông báo, không render bất kỳ widget nào ──
         st.markdown("""
         <div style="background:#2d1a0a; border:1px solid #f59e0b; border-radius:10px;
                     padding:20px 24px; text-align:center; margin-bottom:16px;">
             <div style="font-family:'IBM Plex Mono',monospace; color:#f59e0b;
                         font-size:1rem; letter-spacing:2px; margin-bottom:8px;">👁 CHẾ ĐỘ XEM</div>
             <div style="color:#94a3b8; font-size:0.85rem;">
-                Tài khoản của bạn chỉ có quyền <b style="color:#f59e0b">tra cứu</b>.<br/>
+                Tài khoản của bạn chỉ có quyền <b style="color:#f59e0b">tra cứu</b> ở cột bên phải.<br/>
                 Liên hệ quản trị viên để được cấp quyền sản xuất.
             </div>
         </div>""", unsafe_allow_html=True)
 
-    if _is_san_xuat:
+    else:
+        # ══════════════════════════════════════════
+        # SẢN XUẤT: toàn bộ chức năng quét & ghi nhận
+        # ══════════════════════════════════════════
+
         # Camera
         st.markdown('<div class="card"><div class="card-title">📷 Quét mã QR</div>', unsafe_allow_html=True)
-    uploaded_file = st.file_uploader("▶️ BẤM ĐỂ MỞ CAMERA CHỤP MÃ QR",
-        type=["jpg","jpeg","png"], accept_multiple_files=False,
-        key=f"cam_{st.session_state.form_key}")
-    if uploaded_file is not None:
-        try:
-            file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
-            opencv_img = cv2.imdecode(file_bytes, 1)
-            detector   = cv2.QRCodeDetector()
-            data, _, _ = detector.detectAndDecode(opencv_img)
-            if data:
-                if data != st.session_state.qr_detected:
-                    st.session_state.qr_detected  = data
-                    st.session_state.headcode_val = data
-                    result = lookup_in_cache(data)
-                    st.session_state.lookup_headcode = data
-                    st.session_state.lookup_result   = result
-                    st.session_state.form_key += 1
-                    st.rerun()
+        uploaded_file = st.file_uploader("▶️ BẤM ĐỂ MỞ CAMERA CHỤP MÃ QR",
+            type=["jpg","jpeg","png"], accept_multiple_files=False,
+            key=f"cam_{st.session_state.form_key}")
+        if uploaded_file is not None:
+            try:
+                file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
+                opencv_img = cv2.imdecode(file_bytes, 1)
+                detector   = cv2.QRCodeDetector()
+                data, _, _ = detector.detectAndDecode(opencv_img)
+                if data:
+                    if data != st.session_state.qr_detected:
+                        st.session_state.qr_detected  = data
+                        st.session_state.headcode_val = data
+                        result = lookup_in_cache(data)
+                        st.session_state.lookup_headcode = data
+                        st.session_state.lookup_result   = result
+                        st.session_state.form_key += 1
+                        st.rerun()
+                else:
+                    st.error("❌ Không tìm thấy mã QR. Vui lòng chụp rõ hơn!")
+            except Exception as ex:
+                st.error(f"Lỗi: {ex}")
+
+        if st.session_state.lookup_result and st.session_state.lookup_result.get("status") == "found":
+            r = st.session_state.lookup_result
+            st.success(f"✅ **{st.session_state.lookup_headcode}** — {r.get('ten_san_pham','')}")
+        elif st.session_state.lookup_headcode and st.session_state.lookup_result and st.session_state.lookup_result.get("status") == "not_found":
+            st.error(f"❌ Mã **{st.session_state.lookup_headcode}** không tồn tại!")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # Form thao tác
+        st.markdown('<div class="card"><div class="card-title">📝 Thông tin thao tác</div>', unsafe_allow_html=True)
+
+        # Thông tin sản phẩm
+        if st.session_state.lookup_result and st.session_state.lookup_result.get("status") == "found":
+            r = st.session_state.lookup_result
+            st.markdown(f"""
+            <div style="background:#0f2d1f; border:1px solid #00e5a0; border-radius:8px;
+                        padding:10px 14px; margin-bottom:12px; font-size:0.82rem;">
+                <div style="color:#00e5a0; font-family:IBM Plex Mono,monospace;
+                            font-size:0.7rem; letter-spacing:1px; margin-bottom:6px;">📦 THÔNG TIN SẢN PHẨM</div>
+                <div style="color:#e0e0e0;"><b>Công trình:</b> {r.get('ten_cong_trinh','')}</div>
+                <div style="color:#e0e0e0; margin-top:4px;"><b>Sản phẩm:</b> {r.get('ten_san_pham','')}</div>
+            </div>""", unsafe_allow_html=True)
+
+        # Công đoạn (ngoài form, realtime)
+        _cd_key = f"_congdoan_{st.session_state.form_key}"
+        def on_congdoan_change():
+            st.session_state.congdoan_val = st.session_state[_cd_key]
+        st.selectbox("Công đoạn *", options=DANH_SACH_CONG_DOAN,
+            index=DANH_SACH_CONG_DOAN.index(st.session_state.congdoan_val)
+                  if st.session_state.congdoan_val in DANH_SACH_CONG_DOAN else 0,
+            key=_cd_key, on_change=on_congdoan_change)
+
+        # Người vận hành: readonly
+        st.text_input("Người vận hành", value=st.session_state.current_ten,
+                      disabled=True, key=f"nb_display_{st.session_state.form_key}")
+
+        # Banner trạng thái
+        job_key_live, is_active_live = get_current_job_state()
+        if not st.session_state.headcode_val.strip():
+            st.info("📷 Quét QR hoặc nhập tay Headcode")
+        elif is_active_live:
+            job_info = st.session_state.active_jobs[job_key_live]
+            st.warning(f"🔄 Đang làm từ **{job_info['gio_bat_dau']}** → Xác nhận **HOÀN THÀNH**")
+        else:
+            st.info("🚀 Chưa bắt đầu → Xác nhận **BẮT ĐẦU**")
+        mode_label = "🏁 HOÀN THÀNH" if is_active_live else "▶️ BẮT ĐẦU"
+
+        # Headcode (ngoài form, realtime lookup)
+        _hc_key = f"_headcode_{st.session_state.form_key}"
+        def on_headcode_change():
+            new_hc = st.session_state[_hc_key].strip()
+            st.session_state.headcode_val = new_hc
+            st.session_state.qr_detected  = new_hc
+            if new_hc:
+                result = lookup_in_cache(new_hc)
+                st.session_state.lookup_headcode = new_hc
+                st.session_state.lookup_result   = result
             else:
-                st.error("❌ Không tìm thấy mã QR. Vui lòng chụp rõ hơn!")
-        except Exception as ex:
-            st.error(f"Lỗi: {ex}")
+                st.session_state.lookup_headcode = ""
+                st.session_state.lookup_result   = None
 
-    if st.session_state.lookup_result and st.session_state.lookup_result.get("status") == "found":
-        r = st.session_state.lookup_result
-        st.success(f"✅ **{st.session_state.lookup_headcode}** — {r.get('ten_san_pham','')}")
-    elif st.session_state.lookup_headcode and st.session_state.lookup_result and st.session_state.lookup_result.get("status") == "not_found":
-        st.error(f"❌ Mã **{st.session_state.lookup_headcode}** không tồn tại!")
-    st.markdown('</div>', unsafe_allow_html=True)
+        st.text_input("Headcode *", value=st.session_state.headcode_val,
+            key=_hc_key, on_change=on_headcode_change,
+            placeholder="Quét QR hoặc nhập tay...")
 
-    # Form
-    st.markdown('<div class="card"><div class="card-title">📝 Thông tin thao tác</div>', unsafe_allow_html=True)
-
-    # Thông tin sản phẩm
-    if st.session_state.lookup_result and st.session_state.lookup_result.get("status") == "found":
-        r = st.session_state.lookup_result
-        st.markdown(f"""
-        <div style="background:#0f2d1f; border:1px solid #00e5a0; border-radius:8px;
-                    padding:10px 14px; margin-bottom:12px; font-size:0.82rem;">
-            <div style="color:#00e5a0; font-family:IBM Plex Mono,monospace;
-                        font-size:0.7rem; letter-spacing:1px; margin-bottom:6px;">📦 THÔNG TIN SẢN PHẨM</div>
-            <div style="color:#e0e0e0;"><b>Công trình:</b> {r.get('ten_cong_trinh','')}</div>
-            <div style="color:#e0e0e0; margin-top:4px;"><b>Sản phẩm:</b> {r.get('ten_san_pham','')}</div>
-        </div>""", unsafe_allow_html=True)
-
-    # ── Công đoạn (ngoài form, realtime) ──
-    _cd_key = f"_congdoan_{st.session_state.form_key}"
-    def on_congdoan_change():
-        st.session_state.congdoan_val = st.session_state[_cd_key]
-    st.selectbox("Công đoạn *", options=DANH_SACH_CONG_DOAN,
-        index=DANH_SACH_CONG_DOAN.index(st.session_state.congdoan_val)
-              if st.session_state.congdoan_val in DANH_SACH_CONG_DOAN else 0,
-        key=_cd_key, on_change=on_congdoan_change)
-
-    # ── Người vận hành: hiển thị readonly (từ tài khoản đăng nhập) ──
-    st.text_input("Người vận hành", value=st.session_state.current_ten,
-                  disabled=True, key=f"nb_display_{st.session_state.form_key}")
-
-    # Banner trạng thái
-    job_key_live, is_active_live = get_current_job_state()
-    if not st.session_state.headcode_val.strip():
-        st.info("📷 Quét QR hoặc nhập tay Headcode")
-    elif is_active_live:
-        job_info = st.session_state.active_jobs[job_key_live]
-        st.warning(f"🔄 Đang làm từ **{job_info['gio_bat_dau']}** → Xác nhận **HOÀN THÀNH**")
-    else:
-        st.info(f"🚀 Chưa bắt đầu → Xác nhận **BẮT ĐẦU**")
-    mode_label = "🏁 HOÀN THÀNH" if is_active_live else "▶️ BẮT ĐẦU"
-
-    # ── Headcode (ngoài form, realtime lookup) ──
-    _hc_key = f"_headcode_{st.session_state.form_key}"
-    def on_headcode_change():
-        new_hc = st.session_state[_hc_key].strip()
-        st.session_state.headcode_val = new_hc
-        st.session_state.qr_detected  = new_hc
-        if new_hc:
-            result = lookup_in_cache(new_hc)
-            st.session_state.lookup_headcode = new_hc
+        hc_live = st.session_state.headcode_val.strip()
+        if hc_live and hc_live != st.session_state.lookup_headcode:
+            result = lookup_in_cache(hc_live)
+            st.session_state.lookup_headcode = hc_live
             st.session_state.lookup_result   = result
-        else:
-            st.session_state.lookup_headcode = ""
-            st.session_state.lookup_result   = None
 
-    st.text_input("Headcode *", value=st.session_state.headcode_val,
-        key=_hc_key, on_change=on_headcode_change,
-        placeholder="Quét QR hoặc nhập tay...")
+        with st.form(key=f"main_form_{st.session_state.form_key}", clear_on_submit=False):
+            headcode = st.session_state.headcode_val.strip()
+            soluong_str = st.text_input("Số lượng", value=st.session_state.soluong_val,
+                placeholder="Nhập số lượng...",
+                key=f"soluong_{st.session_state.form_key}")
+            try:
+                soluong = float(soluong_str.replace(",",".")) if soluong_str.strip() else None
+            except ValueError:
+                soluong = None
+            submit = st.form_submit_button(
+                label=f"💾 XÁC NHẬN — {mode_label}", use_container_width=True)
 
-    # Fallback lookup nếu chưa lookup
-    hc_live = st.session_state.headcode_val.strip()
-    if hc_live and hc_live != st.session_state.lookup_headcode:
-        result = lookup_in_cache(hc_live)
-        st.session_state.lookup_headcode = hc_live
-        st.session_state.lookup_result   = result
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    with st.form(key=f"main_form_{st.session_state.form_key}", clear_on_submit=False):
-        headcode = st.session_state.headcode_val.strip()
-        soluong_str = st.text_input("Số lượng", value=st.session_state.soluong_val,
-            placeholder="Nhập số lượng...",
-            key=f"soluong_{st.session_state.form_key}")
-        try:
-            soluong = float(soluong_str.replace(",",".")) if soluong_str.strip() else None
-        except ValueError:
-            soluong = None
-        submit = st.form_submit_button(
-            label=f"💾 XÁC NHẬN — {mode_label}", use_container_width=True)
+        # SUBMIT
+        if submit:
+            nguoibao = st.session_state.current_ten.strip()
+            congdoan  = st.session_state.congdoan_val
 
-    st.markdown('</div>', unsafe_allow_html=True)
+            _submit_key = f"{headcode}|{congdoan}|{nguoibao}"
+            _now = time.time()
+            _is_dup = (_submit_key == st.session_state.last_submit_key and
+                       (_now - st.session_state.last_submit_time) < 5.0)
+            if not _is_dup:
+                st.session_state.last_submit_key  = _submit_key
+                st.session_state.last_submit_time = _now
 
-    # ── SUBMIT ──
-    if submit:
-        nguoibao = st.session_state.current_ten.strip()  # Luôn lấy từ tài khoản
-        congdoan  = st.session_state.congdoan_val
-
-        _submit_key = f"{headcode}|{congdoan}|{nguoibao}"
-        _now = time.time()
-        _is_dup = (_submit_key == st.session_state.last_submit_key and
-                   (_now - st.session_state.last_submit_time) < 5.0)
-        if not _is_dup:
-            st.session_state.last_submit_key  = _submit_key
-            st.session_state.last_submit_time = _now
-
-        if _is_dup:
-            st.warning("⚠️ Thao tác vừa được ghi nhận, vui lòng chờ...")
-        elif not headcode:
-            st.error("Vui lòng quét hoặc điền Headcode.")
-        elif soluong is None:
-            st.error("Vui lòng nhập số lượng hợp lệ.")
-        elif headcode != st.session_state.lookup_headcode:
-            st.error("❌ Headcode chưa được kiểm tra. Vui lòng nhập lại.")
-            st.session_state.headcode_val = ""; st.session_state.lookup_headcode = ""
-            st.session_state.lookup_result = None; st.session_state.form_key += 1
-            st.rerun()
-        elif not st.session_state.lookup_result or st.session_state.lookup_result.get("status") != "found":
-            st.error("❌ Headcode không hợp lệ.")
-            st.session_state.headcode_val = ""; st.session_state.lookup_headcode = ""
-            st.session_state.lookup_result = None; st.session_state.form_key += 1
-            st.rerun()
-        else:
-            job_key   = f"{headcode}|{congdoan}|{nguoibao.lower()}"
-            is_active = job_key in st.session_state.active_jobs
-
-            if not is_active:
-                payload = {"action":"start","headcode":headcode,"congdoan":congdoan,
-                           "soluong":soluong,"nguoibao":nguoibao}
-                with st.spinner("Đang ghi nhận bắt đầu..."):
-                    ok, resp_data = call_api(payload)
-                if ok and resp_data.get("status") == "ok":
-                    st.session_state.active_jobs[job_key] = {
-                        "headcode":headcode,"congdoan":congdoan,"nguoibao":nguoibao,
-                        "soluong":soluong,"gio_bat_dau":resp_data.get("gio_bat_dau",""),
-                        "row_id":resp_data.get("row_id",""),
-                    }
-                    st.session_state.last_action = {"type":"start","headcode":headcode,"congdoan":congdoan}
-                    st.session_state.qr_detected = ""; st.session_state.headcode_val = ""
-                    st.session_state.lookup_headcode = ""; st.session_state.lookup_result = None
-                    st.session_state.soluong_val = ""; st.session_state.form_key += 1
-                    st.rerun()
-                elif resp_data.get("status") == "duplicate":
-                    st.warning("⚠️ Mã đã được ghi nhận. Đang đồng bộ...")
-                    st.session_state.active_jobs = fetch_active_jobs_from_sheet()
-                    st.session_state.form_key += 1; st.rerun()
-                else:
-                    st.error(f"Lỗi: {resp_data.get('message','Không rõ')}")
+            if _is_dup:
+                st.warning("⚠️ Thao tác vừa được ghi nhận, vui lòng chờ...")
+            elif not headcode:
+                st.error("Vui lòng quét hoặc điền Headcode.")
+            elif soluong is None:
+                st.error("Vui lòng nhập số lượng hợp lệ.")
+            elif headcode != st.session_state.lookup_headcode:
+                st.error("❌ Headcode chưa được kiểm tra. Vui lòng nhập lại.")
+                st.session_state.headcode_val = ""; st.session_state.lookup_headcode = ""
+                st.session_state.lookup_result = None; st.session_state.form_key += 1
+                st.rerun()
+            elif not st.session_state.lookup_result or st.session_state.lookup_result.get("status") != "found":
+                st.error("❌ Headcode không hợp lệ.")
+                st.session_state.headcode_val = ""; st.session_state.lookup_headcode = ""
+                st.session_state.lookup_result = None; st.session_state.form_key += 1
+                st.rerun()
             else:
-                job_info = st.session_state.active_jobs[job_key]
-                payload  = {"action":"finish","headcode":headcode,"congdoan":congdoan,
-                            "soluong":soluong,"nguoibao":nguoibao,
-                            "gio_bat_dau":job_info["gio_bat_dau"],
-                            "gio_hoan_thanh":datetime.now(VN_TZ).strftime("%d/%m/%Y %H:%M:%S"),
-                            "row_id":job_info.get("row_id","")}
-                with st.spinner("Đang cập nhật hoàn thành..."):
-                    ok, resp_data = call_api(payload)
-                if ok and resp_data.get("status") == "ok":
-                    del st.session_state.active_jobs[job_key]
-                    st.session_state.last_action = {"type":"finish","headcode":headcode,"congdoan":congdoan}
-                    st.session_state.qr_detected = ""; st.session_state.headcode_val = ""
-                    st.session_state.lookup_headcode = ""; st.session_state.lookup_result = None
-                    st.session_state.soluong_val = ""; st.session_state.form_key += 1
-                    st.rerun()
-                else:
-                    st.error(f"Lỗi: {resp_data.get('message','Không rõ')}")
+                job_key   = f"{headcode}|{congdoan}|{nguoibao.lower()}"
+                is_active = job_key in st.session_state.active_jobs
 
-    # end if _is_san_xuat
+                if not is_active:
+                    payload = {"action":"start","headcode":headcode,"congdoan":congdoan,
+                               "soluong":soluong,"nguoibao":nguoibao}
+                    with st.spinner("Đang ghi nhận bắt đầu..."):
+                        ok, resp_data = call_api(payload)
+                    if ok and resp_data.get("status") == "ok":
+                        st.session_state.active_jobs[job_key] = {
+                            "headcode":headcode,"congdoan":congdoan,"nguoibao":nguoibao,
+                            "soluong":soluong,"gio_bat_dau":resp_data.get("gio_bat_dau",""),
+                            "row_id":resp_data.get("row_id",""),
+                        }
+                        st.session_state.last_action = {"type":"start","headcode":headcode,"congdoan":congdoan}
+                        st.session_state.qr_detected = ""; st.session_state.headcode_val = ""
+                        st.session_state.lookup_headcode = ""; st.session_state.lookup_result = None
+                        st.session_state.soluong_val = ""; st.session_state.form_key += 1
+                        st.rerun()
+                    elif resp_data.get("status") == "duplicate":
+                        st.warning("⚠️ Mã đã được ghi nhận. Đang đồng bộ...")
+                        st.session_state.active_jobs = fetch_active_jobs_from_sheet()
+                        st.session_state.form_key += 1; st.rerun()
+                    else:
+                        st.error(f"Lỗi: {resp_data.get('message','Không rõ')}")
+                else:
+                    job_info = st.session_state.active_jobs[job_key]
+                    payload  = {"action":"finish","headcode":headcode,"congdoan":congdoan,
+                                "soluong":soluong,"nguoibao":nguoibao,
+                                "gio_bat_dau":job_info["gio_bat_dau"],
+                                "gio_hoan_thanh":datetime.now(VN_TZ).strftime("%d/%m/%Y %H:%M:%S"),
+                                "row_id":job_info.get("row_id","")}
+                    with st.spinner("Đang cập nhật hoàn thành..."):
+                        ok, resp_data = call_api(payload)
+                    if ok and resp_data.get("status") == "ok":
+                        del st.session_state.active_jobs[job_key]
+                        st.session_state.last_action = {"type":"finish","headcode":headcode,"congdoan":congdoan}
+                        st.session_state.qr_detected = ""; st.session_state.headcode_val = ""
+                        st.session_state.lookup_headcode = ""; st.session_state.lookup_result = None
+                        st.session_state.soluong_val = ""; st.session_state.form_key += 1
+                        st.rerun()
+                    else:
+                        st.error(f"Lỗi: {resp_data.get('message','Không rõ')}")
+
 
 # ─────────────────────────────────────────────────
 # CỘT PHẢI
@@ -608,8 +610,12 @@ with col_active:
     if not active_jobs:
         st.markdown('<p style="color:#64748b; font-size:0.85rem; font-family:IBM Plex Mono,monospace;">— Chưa có công việc nào —</p>', unsafe_allow_html=True)
     else:
+        _can_finish = normalize_role(st.session_state.current_role) == "sanxuat"
         for jk, job in list(active_jobs.items()):
-            c_info, c_btn = st.columns([3,1])
+            if _can_finish:
+                c_info, c_btn = st.columns([3,1])
+            else:
+                c_info = st.container()  # Toàn bộ chiều rộng, không có nút
             with c_info:
                 st.markdown(f"""
                 <div class="job-row">
@@ -618,24 +624,23 @@ with col_active:
                     <div class="job-meta">👤 {job['nguoibao']} | 📦 {job.get('soluong',0)}</div>
                     <div class="job-meta" style="color:#64748b;font-size:0.72rem;">🕐 {job['gio_bat_dau']}</div>
                 </div>""", unsafe_allow_html=True)
-            with c_btn:
-                if st.button("✅ Xong", key=f"finish_btn_{jk}", use_container_width=True):
-                    # Kiểm tra người thực hiện có khớp với người đang đăng nhập không
-                    job_nguoi   = job["nguoibao"].strip().lower()
-                    login_nguoi = st.session_state.current_ten.strip().lower()
-                    if job_nguoi != login_nguoi:
-                        st.session_state[f"owner_err_{jk}"] = True
-                    else:
-                        st.session_state.pop(f"owner_err_{jk}", None)
-                        sl = job.get("soluong","")
-                        st.session_state.prefill_headcode = job["headcode"]
-                        st.session_state.prefill_nguoibao = job["nguoibao"]
-                        st.session_state.prefill_congdoan = job["congdoan"]
-                        st.session_state.prefill_soluong  = str(sl) if sl != "" else ""
-                    st.rerun()
-                # Hiển thị cảnh báo nếu sai người
-                if st.session_state.get(f"owner_err_{jk}"):
-                    st.warning("⚠️ Mã hàng này không phải mã hàng bạn đang thực hiện")
+            if _can_finish:
+                with c_btn:
+                    if st.button("✅ Xong", key=f"finish_btn_{jk}", use_container_width=True):
+                        job_nguoi   = job["nguoibao"].strip().lower()
+                        login_nguoi = st.session_state.current_ten.strip().lower()
+                        if job_nguoi != login_nguoi:
+                            st.session_state[f"owner_err_{jk}"] = True
+                        else:
+                            st.session_state.pop(f"owner_err_{jk}", None)
+                            sl = job.get("soluong","")
+                            st.session_state.prefill_headcode = job["headcode"]
+                            st.session_state.prefill_nguoibao = job["nguoibao"]
+                            st.session_state.prefill_congdoan = job["congdoan"]
+                            st.session_state.prefill_soluong  = str(sl) if sl != "" else ""
+                        st.rerun()
+                    if st.session_state.get(f"owner_err_{jk}"):
+                        st.warning("⚠️ Mã hàng này không phải mã hàng bạn đang thực hiện")
     st.markdown('</div>', unsafe_allow_html=True)
 
     # Hướng dẫn
