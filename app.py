@@ -86,20 +86,22 @@ def call_api(payload):
     except Exception as ex:
         return False, {"message": str(ex)}
 
-DATA_CACHE_TTL = 600  # Giây — refresh cache sau 10 phút
+# Cache 24h — phù hợp với DATA cập nhật 2-3 ngày/lần
+# Khi update DATA mới, bấm nút "Làm mới dữ liệu" để xóa cache thủ công
+DATA_CACHE_TTL = 86400  # 24 giờ
 
 @st.cache_data(ttl=DATA_CACHE_TTL, show_spinner=False)
 def load_data_cache():
     """
     Load toàn bộ cột A+F+H từ sheet DATA về dict Python.
-    Streamlit tự cache 10 phút, sau đó tự gọi lại.
-    Trả về: dict { "250911878": {"ten_cong_trinh": ..., "ten_san_pham": ...} }
+    Cache 24h, tự refresh hoặc xóa thủ công qua nút Làm mới dữ liệu.
+    Trả về: (dict, loaded_at) hoặc (None, None) nếu lỗi
     """
     try:
         resp = requests.get(
             WEB_APP_URL,
             params={"action": "load_data"},
-            timeout=30   # Lần đầu load 80k dòng có thể cần ~5-10s
+            timeout=30
         )
         if resp.status_code == 200:
             data = resp.json()
@@ -112,14 +114,15 @@ def load_data_cache():
                             "ten_cong_trinh": row[1],
                             "ten_san_pham":   row[2],
                         }
-                return result
+                loaded_at = datetime.now(VN_TZ).strftime("%d/%m/%Y %H:%M")
+                return result, loaded_at
     except Exception:
         pass
-    return None   # None = lỗi kết nối (khác với {} = load được nhưng trống)
+    return None, None
 
 def lookup_in_cache(headcode: str):
-    """Tra cứu headcode trong cache. Trả về dict info hoặc None (lỗi) hoặc False (not found)."""
-    cache = load_data_cache()
+    """Tra cứu headcode trong cache. Trả về dict info hoặc None (lỗi) hoặc not_found."""
+    cache, _ = load_data_cache()
     if cache is None:
         return None   # Lỗi kết nối
     hc = str(headcode).strip()
@@ -462,9 +465,29 @@ with col_active:
         else:
             st.success(f"🏁 ĐÃ HOÀN THÀNH: **{act['headcode']}** — {act['congdoan']}")
 
-    if st.button("🔄 Làm mới danh sách", use_container_width=True):
-        st.session_state.active_jobs = fetch_active_jobs_from_sheet()
-        st.rerun()
+    col_r1, col_r2 = st.columns(2)
+    with col_r1:
+        if st.button("🔄 Làm mới danh sách", use_container_width=True):
+            st.session_state.active_jobs = fetch_active_jobs_from_sheet()
+            st.rerun()
+    with col_r2:
+        if st.button("🗄️ Làm mới dữ liệu DATA", use_container_width=True):
+            # Xóa cache Streamlit → lần lookup tiếp sẽ load lại từ Sheet
+            load_data_cache.clear()
+            st.session_state.lookup_headcode = ""
+            st.session_state.lookup_result   = None
+            st.success("✅ Đã xóa cache, dữ liệu sẽ được tải lại!")
+            st.rerun()
+
+    # Hiển thị thời gian cache DATA
+    _, loaded_at = load_data_cache()
+    if loaded_at:
+        st.markdown(
+            f'<div style="font-size:0.72rem; color:#64748b; text-align:center; margin-bottom:8px;">'
+            f'🗄️ Dữ liệu DATA: <b style="color:#94a3b8">{loaded_at}</b>'
+            f' &nbsp;|&nbsp; Tự làm mới sau 24h</div>',
+            unsafe_allow_html=True
+        )
 
     st.markdown('<div class="card"><div class="card-title">⚡ Đang xử lý</div>', unsafe_allow_html=True)
 
