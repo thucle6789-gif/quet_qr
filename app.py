@@ -9,7 +9,7 @@ import time
 # =====================================================
 # CẤU HÌNH
 # =====================================================
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwBaPt5lFY7GeOq5j7ZPT4bLajH5JxQjqnysdpn_crEZ8zn58w7OhLecQo3uU-F7J4Bcg/exec"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwBbkZMJRhMJse2vs6FA2zzFqV6AItP1Y5F24KiZMP2CBGZgF8gJpMESrKZR2qQR9rBnA/exec"
 VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 DANH_SACH_CONG_DOAN = [
@@ -596,11 +596,11 @@ with col_active:
         st.session_state.search_results = []  # Reset kết quả khi gõ mới
 
     st.text_input(
-        "Nhập mã headcode (3-9 ký tự)",
+        "Nhập số đuôi của headcode (3+ ký tự)",
         value=st.session_state.search_query,
         key="_search_input",
         on_change=on_search_change,
-        placeholder="VD: 2509, 260306...",
+        placeholder="VD: 878 → tìm ...878, 1878 → tìm ...1878",
     )
 
     # Tự động tìm khi có từ 3 ký tự trở lên
@@ -659,6 +659,6 @@ with col_active:
             </div>
             """, unsafe_allow_html=True)
     elif q and len(q) < 3:
-        st.caption("Nhập ít nhất 3 ký tự để tìm kiếm.")
+        st.caption("Nhập ít nhất 3 số đuôi để tìm kiếm.")
 
     st.markdown('</div>', unsafe_allow_html=True)
