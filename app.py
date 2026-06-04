@@ -9,7 +9,7 @@ import time
 # =====================================================
 # CẤU HÌNH
 # =====================================================
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyb03gkCikQtY9BtLcGBs25283b9eWXzAEzvKpuGFJvv0NiMjZrlEJcqEuHoDBp6zLGnA/exec"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbx-S-gPCg9M0J7d0j2aIleYyvw7Ug1cOTTPpB5M37lIi1OlYBBsB_EHCKMWrZVeImIPYw/exec"
 VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 DANH_SACH_CONG_DOAN = [
@@ -147,7 +147,7 @@ defaults = {
     "qr_detected":        "",
     "nguoibao_val":       "",
     "congdoan_val":       DANH_SACH_CONG_DOAN[0],
-    "soluong_val":        1.000,
+    "soluong_val":        "",    # Để trống mặc định
     "form_key":           0,
     "active_jobs":        {},
     "active_jobs_loaded": False,
@@ -351,14 +351,17 @@ with col_scan:
     with st.form(key=f"main_form_{st.session_state.form_key}", clear_on_submit=False):
         # Headcode chỉ hiển thị readonly trong form để truyền vào submit
         headcode = st.session_state.headcode_val.strip()
-        soluong = st.number_input(
+        soluong_str = st.text_input(
             "Số lượng",
-            min_value=0.000,
             value=st.session_state.soluong_val,
-            step=0.001,
-            format="%.3f",
+            placeholder="Nhập số lượng...",
             key=f"soluong_{st.session_state.form_key}"
         )
+        # Parse về float, None nếu trống
+        try:
+            soluong = float(soluong_str.replace(",", ".")) if soluong_str.strip() else None
+        except ValueError:
+            soluong = None
         submit = st.form_submit_button(
             label=f"💾 XÁC NHẬN — {mode_label}",
             use_container_width=True,
@@ -390,6 +393,8 @@ with col_scan:
             st.error("Vui lòng quét hoặc điền Headcode.")
         elif not nguoibao:
             st.error("Vui lòng điền Người vận hành.")
+        elif soluong is None:
+            st.error("Vui lòng nhập số lượng hợp lệ.")
         elif headcode.strip() != st.session_state.lookup_headcode:
             # ✅ Headcode trong form khác với headcode đã lookup → không hợp lệ
             st.error("❌ Headcode không khớp với mã đã kiểm tra. Vui lòng quét lại.")
@@ -418,7 +423,7 @@ with col_scan:
                     "action":     "start",
                     "headcode":   headcode,
                     "congdoan":   congdoan,
-                    "soluong":    float(soluong),
+                    "soluong":    soluong,
                     "nguoibao":   nguoibao,
                 }
                 with st.spinner("Đang ghi nhận bắt đầu..."):
@@ -440,7 +445,7 @@ with col_scan:
                     st.session_state.headcode_val    = ""
                     st.session_state.lookup_headcode = ""
                     st.session_state.lookup_result   = None
-                    st.session_state.soluong_val     = 1.000
+                    st.session_state.soluong_val     = ""
                     st.session_state.form_key       += 1
                     st.rerun()
                 elif resp_data.get("status") == "duplicate":
@@ -459,7 +464,7 @@ with col_scan:
                     "action":         "finish",
                     "headcode":       headcode,
                     "congdoan":       congdoan,
-                    "soluong":        float(soluong),
+                    "soluong":        soluong,
                     "nguoibao":       nguoibao,
                     "gio_bat_dau":    job_info["gio_bat_dau"],
                     "gio_hoan_thanh": datetime.now(VN_TZ).strftime("%d/%m/%Y %H:%M:%S"),
@@ -475,7 +480,7 @@ with col_scan:
                     st.session_state.headcode_val    = ""
                     st.session_state.lookup_headcode = ""
                     st.session_state.lookup_result   = None
-                    st.session_state.soluong_val     = 1.000
+                    st.session_state.soluong_val     = ""
                     st.session_state.form_key       += 1
                     st.rerun()
                 else:
