@@ -162,6 +162,7 @@ defaults = {
     "prefill_headcode":   "",
     "prefill_nguoibao":   "",
     "prefill_congdoan":   "",
+    "prefill_soluong":    "",   # Số lượng prefill từ job card
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -190,9 +191,11 @@ if st.session_state.prefill_headcode:
     st.session_state.headcode_val    = st.session_state.prefill_headcode
     st.session_state.nguoibao_val   = st.session_state.prefill_nguoibao
     st.session_state.congdoan_val   = st.session_state.prefill_congdoan
+    st.session_state.soluong_val    = st.session_state.prefill_soluong
     st.session_state.prefill_headcode = ""
     st.session_state.prefill_nguoibao = ""
     st.session_state.prefill_congdoan = ""
+    st.session_state.prefill_soluong  = ""
     st.session_state.form_key += 1
     st.rerun()
 
@@ -548,6 +551,9 @@ with col_active:
                     st.session_state.prefill_headcode = job["headcode"]
                     st.session_state.prefill_nguoibao = job["nguoibao"]
                     st.session_state.prefill_congdoan = job["congdoan"]
+                    # Chuyển soluong về string để hiển thị trong text_input
+                    sl = job.get("soluong", "")
+                    st.session_state.prefill_soluong  = str(sl) if sl != "" else ""
                     st.rerun()
 
     st.markdown('</div>', unsafe_allow_html=True)
