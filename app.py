@@ -413,10 +413,13 @@ with col_scan:
                         "gio_bat_dau": gio_bat_dau,
                         "row_id":      row_id,
                     }
-                    st.session_state.last_action  = {"type": "start", "headcode": headcode, "congdoan": congdoan}
-                    st.session_state.qr_detected  = ""
-                    st.session_state.soluong_val  = 1.000
-                    st.session_state.form_key    += 1
+                    st.session_state.last_action     = {"type": "start", "headcode": headcode, "congdoan": congdoan}
+                    st.session_state.qr_detected     = ""
+                    st.session_state.headcode_val    = ""
+                    st.session_state.lookup_headcode = ""
+                    st.session_state.lookup_result   = None
+                    st.session_state.soluong_val     = 1.000
+                    st.session_state.form_key       += 1
                     st.rerun()
                 elif resp_data.get("status") == "duplicate":
                     # Apps Script báo đã tồn tại → load lại danh sách
@@ -445,10 +448,13 @@ with col_scan:
 
                 if ok and resp_data.get("status") == "ok":
                     del st.session_state.active_jobs[job_key]
-                    st.session_state.last_action  = {"type": "finish", "headcode": headcode, "congdoan": congdoan}
-                    st.session_state.qr_detected  = ""
-                    st.session_state.soluong_val  = 1.000
-                    st.session_state.form_key    += 1
+                    st.session_state.last_action     = {"type": "finish", "headcode": headcode, "congdoan": congdoan}
+                    st.session_state.qr_detected     = ""
+                    st.session_state.headcode_val    = ""
+                    st.session_state.lookup_headcode = ""
+                    st.session_state.lookup_result   = None
+                    st.session_state.soluong_val     = 1.000
+                    st.session_state.form_key       += 1
                     st.rerun()
                 else:
                     st.error(f"Lỗi: {resp_data.get('message', 'Không rõ')}")
