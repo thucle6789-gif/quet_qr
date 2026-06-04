@@ -9,7 +9,7 @@ import time
 # =====================================================
 # CẤU HÌNH
 # =====================================================
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbx-S-gPCg9M0J7d0j2aIleYyvw7Ug1cOTTPpB5M37lIi1OlYBBsB_EHCKMWrZVeImIPYw/exec"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwBaPt5lFY7GeOq5j7ZPT4bLajH5JxQjqnysdpn_crEZ8zn58w7OhLecQo3uU-F7J4Bcg/exec"
 VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 DANH_SACH_CONG_DOAN = [
@@ -129,6 +129,20 @@ def call_api(payload):
     except Exception as ex:
         return False, {"message": str(ex)}
 
+def search_qr_log(query: str):
+    """Tìm kiếm trong QR_Log theo headcode (chứa chuỗi query)."""
+    try:
+        resp = requests.get(
+            WEB_APP_URL,
+            params={"action": "search", "query": query.strip()},
+            timeout=15
+        )
+        if resp.status_code == 200:
+            return resp.json().get("results", [])
+    except Exception:
+        pass
+    return None
+
 def lookup_in_cache(headcode: str):
     """Tra cứu headcode trong cache dict. < 1ms, không gọi API."""
     init = fetch_init_data()
@@ -163,6 +177,8 @@ defaults = {
     "prefill_nguoibao":   "",
     "prefill_congdoan":   "",
     "prefill_soluong":    "",   # Số lượng prefill từ job card
+    "search_query":       "",   # Từ khóa tra cứu QR_Log
+    "search_results":     [],   # Kết quả tra cứu
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -569,3 +585,80 @@ with col_active:
         </div>
     </div>
     """, unsafe_allow_html=True)
+
+    # =====================================================
+    # KHU VỰC TRA CỨU QR_LOG
+    # =====================================================
+    st.markdown('<div class="card"><div class="card-title">🔍 Tra cứu lịch sử QR_Log</div>', unsafe_allow_html=True)
+
+    def on_search_change():
+        st.session_state.search_query   = st.session_state["_search_input"]
+        st.session_state.search_results = []  # Reset kết quả khi gõ mới
+
+    st.text_input(
+        "Nhập mã headcode (3-9 ký tự)",
+        value=st.session_state.search_query,
+        key="_search_input",
+        on_change=on_search_change,
+        placeholder="VD: 2509, 260306...",
+    )
+
+    # Tự động tìm khi có từ 3 ký tự trở lên
+    q = st.session_state.search_query.strip()
+    if len(q) >= 3:
+        if not st.session_state.search_results:
+            with st.spinner("🔍 Đang tìm kiếm..."):
+                rows = search_qr_log(q)
+            if rows is None:
+                st.error("❌ Không thể kết nối. Vui lòng thử lại.")
+            elif len(rows) == 0:
+                st.info("Không tìm thấy kết quả nào.")
+                st.session_state.search_results = ["__empty__"]
+            else:
+                st.session_state.search_results = rows
+
+    results = st.session_state.search_results
+    if results and results != ["__empty__"]:
+        st.markdown(
+            f'<div style="font-size:0.75rem; color:#00e5a0; margin-bottom:8px;">'
+            f'Tìm thấy <b>{len(results)}</b> kết quả</div>',
+            unsafe_allow_html=True
+        )
+        # Header bảng
+        st.markdown("""
+        <div style="display:grid; grid-template-columns:1.2fr 1.5fr 0.8fr 0.8fr 1fr 1fr 0.6fr;
+                    gap:4px; padding:6px 8px; background:#0f1117;
+                    border-radius:6px; margin-bottom:4px;
+                    font-family:IBM Plex Mono,monospace; font-size:0.65rem;
+                    color:#64748b; text-transform:uppercase; letter-spacing:1px;">
+            <div>Headcode</div><div>Công đoạn</div><div>SL</div>
+            <div>Người</div><div>Bắt đầu</div><div>Hoàn thành</div><div>TT</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        for row in results:
+            trang_thai = row.get("trang_thai", "")
+            color = "#4ade80" if trang_thai == "ĐANG LÀM" else "#818cf8" if trang_thai == "HOÀN THÀNH" else "#94a3b8"
+            sl = row.get("soluong", "")
+            try:
+                sl = f"{float(sl):.3f}" if sl != "" else ""
+            except Exception:
+                sl = str(sl)
+            st.markdown(f"""
+            <div style="display:grid; grid-template-columns:1.2fr 1.5fr 0.8fr 0.8fr 1fr 1fr 0.6fr;
+                        gap:4px; padding:8px; background:#1a1f2e;
+                        border:1px solid #2a3045; border-left:3px solid {color};
+                        border-radius:6px; margin-bottom:4px; font-size:0.72rem; color:#e0e0e0;">
+                <div style="font-family:IBM Plex Mono,monospace; color:#f59e0b; font-weight:600;">{row.get('headcode','')}</div>
+                <div style="color:#94a3b8;">{row.get('congdoan','')}</div>
+                <div>{sl}</div>
+                <div style="color:#94a3b8;">{row.get('nguoibao','')}</div>
+                <div style="font-size:0.65rem;">{row.get('gio_bat_dau','')}</div>
+                <div style="font-size:0.65rem;">{row.get('gio_hoan_thanh','')}</div>
+                <div style="color:{color}; font-weight:600; font-size:0.65rem;">{trang_thai}</div>
+            </div>
+            """, unsafe_allow_html=True)
+    elif q and len(q) < 3:
+        st.caption("Nhập ít nhất 3 ký tự để tìm kiếm.")
+
+    st.markdown('</div>', unsafe_allow_html=True)
