@@ -304,11 +304,17 @@ with col_scan:
 
     def on_headcode_change():
         new_hc = st.session_state[_hc_key].strip()
-        st.session_state.headcode_val    = new_hc
-        st.session_state.qr_detected     = new_hc
-        # Reset lookup để trigger lại
-        st.session_state.lookup_headcode = ""
-        st.session_state.lookup_result   = None
+        st.session_state.headcode_val = new_hc
+        st.session_state.qr_detected  = new_hc
+        if new_hc:
+            # ✅ Lookup NGAY TRONG on_change — không cần rerun thêm lần nào
+            # Cache dict → tra cứu < 1ms, hoàn toàn an toàn khi gọi trong callback
+            result = lookup_in_cache(new_hc)
+            st.session_state.lookup_headcode = new_hc
+            st.session_state.lookup_result   = result
+        else:
+            st.session_state.lookup_headcode = ""
+            st.session_state.lookup_result   = None
 
     st.text_input(
         "Headcode *",
@@ -318,11 +324,10 @@ with col_scan:
         placeholder="Quét QR hoặc nhập tay...",
     )
 
-    # Lookup ngay sau widget — chạy mỗi khi headcode_val thay đổi
+    # Fallback: nếu headcode_val có giá trị nhưng chưa lookup (VD: prefill từ danh sách)
     hc_live = st.session_state.headcode_val.strip()
     if hc_live and hc_live != st.session_state.lookup_headcode:
-        with st.spinner("🔍 Đang kiểm tra mã..."):
-            result = lookup_in_cache(hc_live)
+        result = lookup_in_cache(hc_live)
         st.session_state.lookup_headcode = hc_live
         st.session_state.lookup_result   = result
 
