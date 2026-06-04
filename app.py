@@ -6,7 +6,7 @@ from datetime import datetime, date
 from zoneinfo import ZoneInfo
 import time
 import hashlib
-from streamlit_cookies_controller import CookieController
+from streamlit_cookies_manager import EncryptedCookieManager
 
 # =====================================================
 # CẤU HÌNH
@@ -28,7 +28,12 @@ st.set_page_config(page_title="Hệ Thống Quét QR Xưởng", layout="wide", i
 # =====================================================
 # COOKIE CONTROLLER — lưu session đăng nhập theo ngày
 # =====================================================
-cookie = CookieController()
+cookie = EncryptedCookieManager(
+    prefix="qr_system/",
+    password="qr-xuong-san-xuat-2024"
+)
+if not cookie.ready():
+    st.stop()
 
 # CSS toàn cục (luôn load — cần thiết cho cả trang login lẫn app)
 st.markdown("""
@@ -186,9 +191,9 @@ if st.session_state.get("logged_in") is not True:
     else:
         # Lần thứ 2 trở đi: cookie đã sẵn sàng, đọc bình thường
         try:
-            saved_user = cookie.get("qr_user") or ""
-            saved_ten  = cookie.get("qr_ten")  or ""
-            saved_date = cookie.get("qr_date") or ""
+            saved_user = cookie.get("qr_user", "") or ""
+            saved_ten  = cookie.get("qr_ten",  "") or ""
+            saved_date = cookie.get("qr_date", "") or ""
             today_str  = date.today().strftime("%Y-%m-%d")
             if saved_user and saved_ten and saved_date == today_str:
                 st.session_state.logged_in          = True
@@ -236,10 +241,11 @@ if not st.session_state.logged_in:
                     _user = result.get("user", user_input.strip())
                     _ten  = result.get("ten",  user_input.strip())
                     _today = date.today().strftime("%Y-%m-%d")
-                    # Lưu cookie hết hạn sau 1 ngày
-                    cookie.set("qr_user", _user,  max_age=86400)
-                    cookie.set("qr_ten",  _ten,   max_age=86400)
-                    cookie.set("qr_date", _today, max_age=86400)
+                    # Lưu cookie (hết hạn sau 1 ngày)
+                    cookie["qr_user"] = _user
+                    cookie["qr_ten"]  = _ten
+                    cookie["qr_date"] = _today
+                    cookie.save()
                     st.session_state.logged_in          = True
                     st.session_state.current_user       = _user
                     st.session_state.current_ten        = _ten
@@ -279,9 +285,10 @@ with col_h2:
     if st.button("🚪 Đăng xuất", use_container_width=True):
         # Xóa cookie khi đăng xuất
         try:
-            cookie.remove("qr_user")
-            cookie.remove("qr_ten")
-            cookie.remove("qr_date")
+            cookie["qr_user"] = ""
+            cookie["qr_ten"]  = ""
+            cookie["qr_date"] = ""
+            cookie.save()
         except Exception:
             pass
         for k in list(st.session_state.keys()):
