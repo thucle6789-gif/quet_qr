@@ -9,7 +9,7 @@ import time
 # =====================================================
 # CẤU HÌNH
 # =====================================================
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwBbkZMJRhMJse2vs6FA2zzFqV6AItP1Y5F24KiZMP2CBGZgF8gJpMESrKZR2qQR9rBnA/exec"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxvwuD1SFZ8R1BzbccOC2-ZmUaHxRN4vOkmkghM_mFmUlnpx9ZO7GC4ZCktJwnfpVH1/exec"
 VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 DANH_SACH_CONG_DOAN = [
