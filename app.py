@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 import time
 import hashlib
 from streamlit_cookies_manager import EncryptedCookieManager
+from streamlit_qrcode_scanner import qrcode_scanner  # Thư viện quét mã chuyên dụng cho Cloud
 
 # =====================================================
 # CẤU HÌNH
@@ -153,15 +154,11 @@ def search_qr_log(query: str):
 # =====================================================
 # SESSION STATE
 # =====================================================
-# Khởi tạo session state — chỉ set nếu key chưa tồn tại
-# "logged_in" mặc định False → bắt buộc qua trang login mỗi phiên mới
 defaults = {
-    # Auth — QUAN TRỌNG: logged_in phải là False khi chưa xác thực
     "logged_in":          False,
     "current_user":       "",
     "current_ten":        "",
     "login_error":        "",
-    # App state
     "qr_detected":        "",
     "headcode_val":       "",
     "nguoibao_val":       "",
@@ -182,27 +179,21 @@ defaults = {
     "search_query":       "",
     "search_results":     [],
     "cookie_checked":     False,
-    "current_role":       "",   # "sản xuất" | "người xem"
+    "current_role":       "",   
 }
 for k, v in defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
-# GUARD + COOKIE RESTORE
-# CookieController cần 1 render cycle để đọc được cookie từ browser.
-# Dùng "cookie_checked" để biết đã qua cycle đó chưa.
 if st.session_state.get("logged_in") is not True:
     st.session_state["logged_in"] = False
 
     if not st.session_state.get("cookie_checked"):
-        # Lần đầu load: render 1 spinner rỗng để trigger cookie hydration,
-        # đánh dấu đã check, rồi rerun để lần sau đọc được giá trị thật.
         st.session_state["cookie_checked"] = True
         with st.spinner(""):
             pass
         st.rerun()
     else:
-        # Lần thứ 2 trở đi: cookie đã sẵn sàng, đọc bình thường
         try:
             saved_user = cookie.get("qr_user", "") or ""
             saved_ten  = cookie.get("qr_ten",  "") or ""
@@ -221,7 +212,7 @@ if st.session_state.get("logged_in") is not True:
             pass
 
 # =====================================================
-# TRANG ĐĂNG NHẬP — chặn toàn bộ nội dung phía dưới nếu chưa login
+# TRANG ĐĂNG NHẬP
 # =====================================================
 if not st.session_state.logged_in:
     st.markdown("""
@@ -257,7 +248,6 @@ if not st.session_state.logged_in:
                     _ten   = result.get("ten",  user_input.strip())
                     _role  = result.get("role", "").strip().lower()
                     _today = date.today().strftime("%Y-%m-%d")
-                    # Lưu cookie (hết hạn sau 1 ngày)
                     cookie["qr_user"] = _user
                     cookie["qr_ten"]  = _ten
                     cookie["qr_role"] = _role
@@ -279,8 +269,6 @@ if not st.session_state.logged_in:
                     st.rerun()
 
         st.markdown('</div>', unsafe_allow_html=True)
-
-    # QUAN TRỌNG: st.stop() dừng render — không cho hiện app khi chưa login
     st.stop()
 
 # =====================================================
@@ -306,7 +294,6 @@ with col_h2:
                      font-family:'IBM Plex Mono',monospace;">{_role_label}</span>
     </div>""", unsafe_allow_html=True)
     if st.button("🚪 Đăng xuất", use_container_width=True):
-        # Xóa cookie khi đăng xuất
         try:
             cookie["qr_user"] = ""
             cookie["qr_ten"]  = ""
@@ -372,7 +359,6 @@ with col_scan:
     _is_san_xuat = normalize_role(st.session_state.current_role) == "sanxuat"
 
     if not _is_san_xuat:
-        # ── NGƯỜI XEM: chỉ hiện thông báo, không render bất kỳ widget nào ──
         st.markdown("""
         <div style="background:#2d1a0a; border:1px solid #f59e0b; border-radius:10px;
                     padding:20px 24px; text-align:center; margin-bottom:16px;">
@@ -386,180 +372,38 @@ with col_scan:
 
     else:
         # ══════════════════════════════════════════
-        # SẢN XUẤT: toàn bộ chức năng quét & ghi nhận
+        # SẢN XUẤT: QUÉT CAMERA TRỰC TIẾP REALTIME
         # ══════════════════════════════════════════
+        st.markdown('<div class="card"><div class="card-title">📷 Quét mã QR Trực Tiếp</div>', unsafe_allow_html=True)
 
-        # ── QR Scanner dùng html5-qrcode (quét realtime, không cần chụp ảnh) ──
-        st.markdown('<div class="card"><div class="card-title">📷 Quét mã QR</div>', unsafe_allow_html=True)
+        # Sử dụng thư viện quét QR Realtime chuyên dụng hỗ trợ chạy trên Cloud/GitHub
+        qr_code_scanned = qrcode_scanner(key=f"qr_scanner_realtime_{st.session_state.form_key}")
 
-        # ── QR: dùng native camera của điện thoại + jsQR decode local ──
-        # Cách hoạt động:
-        #   1. Người dùng bấm nút → mở camera native (capture="environment")
-        #   2. Chụp ảnh → jsQR decode ngay trên trình duyệt (không upload)
-        #   3. Kết quả gửi về Streamlit qua st.query_params (reload nhẹ)
-        # Ưu điểm: dùng camera hệ thống thật, nhanh, không cần WebRTC permission
+        if qr_code_scanned:
+            scanned_text = qr_code_scanned.strip()
+            if scanned_text and scanned_text != st.session_state.headcode_val:
+                st.session_state.qr_detected = scanned_text
+                st.session_state.headcode_val = scanned_text
+                
+                # Thực hiện kiểm tra dữ liệu sản phẩm lập tức
+                result = lookup_in_cache(scanned_text)
+                st.session_state.lookup_headcode = scanned_text
+                st.session_state.lookup_result = result
+                st.rerun()
 
-        # Đọc kết quả QR từ query param (do JS set sau khi decode)
-        _qr_from_url = st.query_params.get("qr", "")
-        if _qr_from_url and _qr_from_url != st.session_state.headcode_val:
-            st.session_state.headcode_val    = _qr_from_url
-            st.session_state.qr_detected     = _qr_from_url
-            result = lookup_in_cache(_qr_from_url)
-            st.session_state.lookup_headcode = _qr_from_url
-            st.session_state.lookup_result   = result
-            st.session_state.form_key       += 1
-            # Xóa query param khỏi URL sau khi đã đọc
-            st.query_params.clear()
-            st.rerun()
-
-        _current_url_qr = st.query_params.get("qr", "")
-
-        qr_component = st.components.v1.html(f"""
-<!DOCTYPE html>
-<html>
-<head>
-<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
-<style>
-  * {{ box-sizing: border-box; }}
-  body {{ margin:0; background:transparent; font-family:'IBM Plex Sans',sans-serif; }}
-  #qr-wrap {{ display:flex; flex-direction:column; align-items:center; gap:10px; padding:4px 0; }}
-
-  /* Nút chính: mở camera native */
-  #btn-capture {{
-    width:100%; max-width:360px; padding:15px;
-    background:linear-gradient(135deg,#00e5a0,#00b37e);
-    color:#0f1117; border:none; border-radius:10px;
-    font-family:'IBM Plex Mono',monospace; font-weight:700;
-    font-size:1rem; letter-spacing:1px; cursor:pointer;
-    display:flex; align-items:center; justify-content:center; gap:10px;
-  }}
-  #btn-capture:active {{ opacity:0.85; transform:scale(0.98); }}
-
-  /* Input file ẩn — kích hoạt camera native */
-  #file-input {{
-    position:absolute; width:1px; height:1px; opacity:0; pointer-events:none;
-  }}
-
-  #status {{
-    font-size:0.82rem; color:#64748b; text-align:center;
-    font-family:'IBM Plex Mono',monospace; min-height:20px;
-  }}
-  #result-box {{
-    width:100%; max-width:360px; padding:14px 18px;
-    background:#0f2d1f; border:2px solid #00e5a0; border-radius:10px;
-    font-family:'IBM Plex Mono',monospace; font-size:1.05rem;
-    color:#00e5a0; font-weight:700; display:none; text-align:center;
-    animation: fadeIn 0.3s ease;
-  }}
-  #err-box {{
-    width:100%; max-width:360px; padding:12px 16px;
-    background:#2d1a0a; border:1px solid #f59e0b; border-radius:8px;
-    font-size:0.82rem; color:#f59e0b; display:none; text-align:center;
-    font-family:'IBM Plex Mono',monospace;
-  }}
-  #canvas {{ display:none; }}
-  @keyframes fadeIn {{ from{{opacity:0;transform:translateY(-4px)}} to{{opacity:1;transform:translateY(0)}} }}
-
-  .hint {{
-    font-size:0.72rem; color:#475569; text-align:center; max-width:300px; line-height:1.5;
-  }}
-</style>
-</head>
-<body>
-<div id="qr-wrap">
-
-  <!-- Input file ẩn: capture="environment" → mở camera sau của điện thoại -->
-  <input type="file" id="file-input" accept="image/*" capture="environment">
-
-  <button id="btn-capture" onclick="openCamera()">
-    <span style="font-size:1.3rem">📷</span>
-    CHỤP CAMERA QUÉT QR
-  </button>
-
-  <div id="status"></div>
-  <div id="result-box"></div>
-  <div id="err-box"></div>
-  <canvas id="canvas"></canvas>
-
-  <div class="hint">
-    Bấm nút → Camera mở → Chụp mã QR → Tự động điền
-  </div>
-</div>
-
-<script>
-var fileInput = document.getElementById("file-input");
-
-function openCamera() {{
-  // Reset để có thể chụp lại cùng ảnh
-  fileInput.value = "";
-  fileInput.click();
-}}
-
-fileInput.addEventListener("change", function(e) {{
-  var file = e.target.files[0];
-  if (!file) return;
-
-  var status = document.getElementById("status");
-  var resultBox = document.getElementById("result-box");
-  var errBox = document.getElementById("err-box");
-
-  resultBox.style.display = "none";
-  errBox.style.display = "none";
-  status.innerText = "⏳ Đang xử lý ảnh...";
-
-  var reader = new FileReader();
-  reader.onload = function(ev) {{
-    var img = new Image();
-    img.onload = function() {{
-      var canvas = document.getElementById("canvas");
-      // Scale xuống nếu ảnh quá lớn (tăng tốc decode)
-      var maxDim = 1200;
-      var scale = Math.min(1, maxDim / Math.max(img.width, img.height));
-      canvas.width  = Math.round(img.width  * scale);
-      canvas.height = Math.round(img.height * scale);
-      var ctx = canvas.getContext("2d");
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      var code = jsQR(imageData.data, imageData.width, imageData.height, {{
-        inversionAttempts: "dontInvert"
-      }});
-      if (code) {{
-        var qrText = code.data.trim();
-        status.innerText = "";
-        resultBox.style.display = "block";
-        resultBox.innerText = "✅ " + qrText;
-        // Gửi về Streamlit bằng cách set query param rồi reload
-        var url = new URL(window.parent.location.href);
-        url.searchParams.set("qr", qrText);
-        window.parent.location.href = url.toString();
-      }} else {{
-        status.innerText = "";
-        errBox.style.display = "block";
-        errBox.innerText = "❌ Không tìm thấy QR trong ảnh. Hãy chụp lại gần hơn và rõ hơn.";
-      }}
-    }};
-    img.src = ev.target.result;
-  }};
-  reader.readAsDataURL(file);
-}});
-</script>
-</body>
-</html>
-""", height=200, scrolling=False)
-
-        # Nhận mã QR từ component qua st.query_params hoặc text_input ẩn
-        # Dùng text_input để người dùng có thể nhập tay nếu cần
+        # Hiển thị thông báo trạng thái kiểm tra mã sản phẩm quét được
         if st.session_state.lookup_result and st.session_state.lookup_result.get("status") == "found":
             r = st.session_state.lookup_result
             st.success(f"✅ **{st.session_state.lookup_headcode}** — {r.get('ten_san_pham','')}")
         elif st.session_state.lookup_headcode and st.session_state.lookup_result and st.session_state.lookup_result.get("status") == "not_found":
-            st.error(f"❌ Mã **{st.session_state.lookup_headcode}** không tồn tại!")
+            st.error(f"❌ Mã **{st.session_state.lookup_headcode}** không tồn tại trong hệ thống!")
+            
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # Form thao tác
+        # Form thao tác nhập liệu dữ liệu
         st.markdown('<div class="card"><div class="card-title">📝 Thông tin thao tác</div>', unsafe_allow_html=True)
 
-        # Thông tin sản phẩm
+        # Thông tin chi tiết sản phẩm từ cache
         if st.session_state.lookup_result and st.session_state.lookup_result.get("status") == "found":
             r = st.session_state.lookup_result
             st.markdown(f"""
@@ -584,10 +428,10 @@ fileInput.addEventListener("change", function(e) {{
         st.text_input("Người vận hành", value=st.session_state.current_ten,
                       disabled=True, key=f"nb_display_{st.session_state.form_key}")
 
-        # Banner trạng thái
+        # Banner trạng thái công việc hiện tại
         job_key_live, is_active_live = get_current_job_state()
         if not st.session_state.headcode_val.strip():
-            st.info("📷 Quét QR hoặc nhập tay Headcode")
+            st.info("📷 Đưa mã QR vào camera hoặc nhập tay Headcode")
         elif is_active_live:
             job_info = st.session_state.active_jobs[job_key_live]
             st.warning(f"🔄 Đang làm từ **{job_info['gio_bat_dau']}** → Xác nhận **HOÀN THÀNH**")
@@ -595,7 +439,7 @@ fileInput.addEventListener("change", function(e) {{
             st.info("🚀 Chưa bắt đầu → Xác nhận **BẮT ĐẦU**")
         mode_label = "🏁 HOÀN THÀNH" if is_active_live else "▶️ BẮT ĐẦU"
 
-        # Headcode (ngoài form, realtime lookup)
+        # Headcode nhập tay (ngoài form, hỗ trợ khi camera mờ)
         _hc_key = f"_headcode_{st.session_state.form_key}"
         def on_headcode_change():
             new_hc = st.session_state[_hc_key].strip()
@@ -611,7 +455,7 @@ fileInput.addEventListener("change", function(e) {{
 
         st.text_input("Headcode *", value=st.session_state.headcode_val,
             key=_hc_key, on_change=on_headcode_change,
-            placeholder="Quét QR hoặc nhập tay...")
+            placeholder="Mã QR tự động điền tại đây hoặc nhập tay...")
 
         hc_live = st.session_state.headcode_val.strip()
         if hc_live and hc_live != st.session_state.lookup_headcode:
@@ -619,10 +463,11 @@ fileInput.addEventListener("change", function(e) {{
             st.session_state.lookup_headcode = hc_live
             st.session_state.lookup_result   = result
 
+        # Form xác nhận số lượng dữ liệu gửi lên Google Sheets
         with st.form(key=f"main_form_{st.session_state.form_key}", clear_on_submit=False):
             headcode = st.session_state.headcode_val.strip()
             soluong_str = st.text_input("Số lượng", value=st.session_state.soluong_val,
-                placeholder="Nhập số lượng...",
+                placeholder="Nhập số lượng thành phẩm...",
                 key=f"soluong_{st.session_state.form_key}")
             try:
                 soluong = float(soluong_str.replace(",",".")) if soluong_str.strip() else None
@@ -633,7 +478,7 @@ fileInput.addEventListener("change", function(e) {{
 
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # SUBMIT
+        # XỬ LÝ SỰ KIỆN SUBMIT DỮ LIỆU
         if submit:
             nguoibao = st.session_state.current_ten.strip()
             congdoan  = st.session_state.congdoan_val
@@ -737,7 +582,7 @@ with col_active:
                     f'🗄️ DATA: <b style="color:#94a3b8">{loaded_at}</b> | Tự làm mới sau 24h</div>',
                     unsafe_allow_html=True)
 
-    # Danh sách đang xử lý
+    # Danh sách các công việc đang trong tiến độ xử lý
     st.markdown('<div class="card"><div class="card-title">⚡ Đang xử lý</div>', unsafe_allow_html=True)
     active_jobs = st.session_state.active_jobs
     if not active_jobs:
@@ -748,7 +593,7 @@ with col_active:
             if _can_finish:
                 c_info, c_btn = st.columns([3,1])
             else:
-                c_info = st.container()  # Toàn bộ chiều rộng, không có nút
+                c_info = st.container()  
             with c_info:
                 st.markdown(f"""
                 <div class="job-row">
@@ -776,7 +621,7 @@ with col_active:
                         st.warning("⚠️ Mã hàng này không phải mã hàng bạn đang thực hiện")
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # Hướng dẫn
+    # Hướng dẫn quy trình quét mã
     st.markdown("""
     <div class="card">
         <div class="card-title">📖 Hướng dẫn</div>
@@ -788,7 +633,7 @@ with col_active:
         </div>
     </div>""", unsafe_allow_html=True)
 
-    # ── Tra cứu QR_Log ──
+    # Tra cứu lịch sử QR_Log
     st.markdown('<div class="card"><div class="card-title">🔍 Tra cứu lịch sử QR_Log</div>', unsafe_allow_html=True)
 
     def on_search_change():
