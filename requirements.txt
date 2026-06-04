@@ -1,5 +1,6 @@
 streamlit
 requests
 opencv-python-headless
+numpy
+Pillow
 streamlit-cookies-manager
-streamlit-camera-input-live
