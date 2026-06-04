@@ -558,7 +558,7 @@ with col_active:
         st.session_state.search_query   = st.session_state["_search_input"]
         st.session_state.search_results = []
 
-    st.text_input("Nhập số đuôi headcode (3+ ký tự)",
+    st.text_input("Nhập số đuôi headcode (3 ký tự trở lên)",
         value=st.session_state.search_query, key="_search_input",
         on_change=on_search_change, placeholder="VD: 878 → tìm ...878")
 
