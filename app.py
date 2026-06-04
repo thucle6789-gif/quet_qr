@@ -521,12 +521,22 @@ with col_active:
                 </div>""", unsafe_allow_html=True)
             with c_btn:
                 if st.button("✅ Xong", key=f"finish_btn_{jk}", use_container_width=True):
-                    sl = job.get("soluong","")
-                    st.session_state.prefill_headcode = job["headcode"]
-                    st.session_state.prefill_nguoibao = job["nguoibao"]
-                    st.session_state.prefill_congdoan = job["congdoan"]
-                    st.session_state.prefill_soluong  = str(sl) if sl != "" else ""
+                    # Kiểm tra người thực hiện có khớp với người đang đăng nhập không
+                    job_nguoi   = job["nguoibao"].strip().lower()
+                    login_nguoi = st.session_state.current_ten.strip().lower()
+                    if job_nguoi != login_nguoi:
+                        st.session_state[f"owner_err_{jk}"] = True
+                    else:
+                        st.session_state.pop(f"owner_err_{jk}", None)
+                        sl = job.get("soluong","")
+                        st.session_state.prefill_headcode = job["headcode"]
+                        st.session_state.prefill_nguoibao = job["nguoibao"]
+                        st.session_state.prefill_congdoan = job["congdoan"]
+                        st.session_state.prefill_soluong  = str(sl) if sl != "" else ""
                     st.rerun()
+                # Hiển thị cảnh báo nếu sai người
+                if st.session_state.get(f"owner_err_{jk}"):
+                    st.warning("⚠️ Mã hàng này không phải mã hàng bạn đang thực hiện")
     st.markdown('</div>', unsafe_allow_html=True)
 
     # Hướng dẫn
