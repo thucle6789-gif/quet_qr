@@ -2,9 +2,11 @@ import streamlit as st
 import requests
 import cv2
 import numpy as np
-from datetime import datetime
+from datetime import datetime, date
 from zoneinfo import ZoneInfo
 import time
+import hashlib
+from streamlit_cookies_controller import CookieController
 
 # =====================================================
 # CẤU HÌNH
@@ -22,6 +24,11 @@ DANH_SACH_CONG_DOAN = [
 # PAGE CONFIG & CSS
 # =====================================================
 st.set_page_config(page_title="Hệ Thống Quét QR Xưởng", layout="wide", initial_sidebar_state="collapsed")
+
+# =====================================================
+# COOKIE CONTROLLER — lưu session đăng nhập theo ngày
+# =====================================================
+cookie = CookieController()
 
 # CSS toàn cục (luôn load — cần thiết cho cả trang login lẫn app)
 st.markdown("""
@@ -157,14 +164,41 @@ defaults = {
     "prefill_soluong":    "",
     "search_query":       "",
     "search_results":     [],
+    "cookie_checked":     False,
 }
 for k, v in defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
-# GUARD: nếu logged_in không phải bool True thì reset về False
+# GUARD + COOKIE RESTORE
+# CookieController cần 1 render cycle để đọc được cookie từ browser.
+# Dùng "cookie_checked" để biết đã qua cycle đó chưa.
 if st.session_state.get("logged_in") is not True:
     st.session_state["logged_in"] = False
+
+    if not st.session_state.get("cookie_checked"):
+        # Lần đầu load: render 1 spinner rỗng để trigger cookie hydration,
+        # đánh dấu đã check, rồi rerun để lần sau đọc được giá trị thật.
+        st.session_state["cookie_checked"] = True
+        with st.spinner(""):
+            pass
+        st.rerun()
+    else:
+        # Lần thứ 2 trở đi: cookie đã sẵn sàng, đọc bình thường
+        try:
+            saved_user = cookie.get("qr_user") or ""
+            saved_ten  = cookie.get("qr_ten")  or ""
+            saved_date = cookie.get("qr_date") or ""
+            today_str  = date.today().strftime("%Y-%m-%d")
+            if saved_user and saved_ten and saved_date == today_str:
+                st.session_state.logged_in          = True
+                st.session_state.current_user       = saved_user
+                st.session_state.current_ten        = saved_ten
+                st.session_state.nguoibao_val       = saved_ten
+                st.session_state.active_jobs_loaded = False
+                st.rerun()
+        except Exception:
+            pass
 
 # =====================================================
 # TRANG ĐĂNG NHẬP — chặn toàn bộ nội dung phía dưới nếu chưa login
@@ -199,10 +233,17 @@ if not st.session_state.logged_in:
                 with st.spinner("Đang xác thực..."):
                     result = do_login(user_input.strip(), pass_input.strip())
                 if result and result.get("status") == "ok":
+                    _user = result.get("user", user_input.strip())
+                    _ten  = result.get("ten",  user_input.strip())
+                    _today = date.today().strftime("%Y-%m-%d")
+                    # Lưu cookie hết hạn sau 1 ngày
+                    cookie.set("qr_user", _user,  max_age=86400)
+                    cookie.set("qr_ten",  _ten,   max_age=86400)
+                    cookie.set("qr_date", _today, max_age=86400)
                     st.session_state.logged_in          = True
-                    st.session_state.current_user       = result.get("user", user_input.strip())
-                    st.session_state.current_ten        = result.get("ten", user_input.strip())
-                    st.session_state.nguoibao_val       = result.get("ten", user_input.strip())
+                    st.session_state.current_user       = _user
+                    st.session_state.current_ten        = _ten
+                    st.session_state.nguoibao_val       = _ten
                     st.session_state.login_error        = ""
                     st.session_state.active_jobs_loaded = False
                     st.rerun()
@@ -236,6 +277,13 @@ with col_h2:
         <span class="user-badge">👤 {st.session_state.current_ten}</span>
     </div>""", unsafe_allow_html=True)
     if st.button("🚪 Đăng xuất", use_container_width=True):
+        # Xóa cookie khi đăng xuất
+        try:
+            cookie.remove("qr_user")
+            cookie.remove("qr_ten")
+            cookie.remove("qr_date")
+        except Exception:
+            pass
         for k in list(st.session_state.keys()):
             del st.session_state[k]
         st.rerun()
@@ -558,7 +606,7 @@ with col_active:
         st.session_state.search_query   = st.session_state["_search_input"]
         st.session_state.search_results = []
 
-    st.text_input("Nhập số đuôi headcode (3 ký tự trở lên)",
+    st.text_input("Nhập số đuôi headcode (3+ ký tự)",
         value=st.session_state.search_query, key="_search_input",
         on_change=on_search_change, placeholder="VD: 878 → tìm ...878")
 
