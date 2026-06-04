@@ -1,27 +1,36 @@
 import subprocess
 import sys
 
-# Khối mã tự động kiểm tra và cài đặt thư viện camera trực tiếp trên Cloud nếu bị thiếu
+# Khối lệnh kiểm tra và tự động ép máy chủ cài đặt thư viện trực tiếp 
+# Khối này bắt buộc phải nằm trên cùng, trước tất cả các lệnh import khác
 try:
+    import streamlit as st
     from streamlit_camera_input_live import camera_input_live
+    from streamlit_cookies_manager import EncryptedCookieManager
 except ModuleNotFoundError:
-    # Ép máy chủ tự tải thư viện về cài đặt lập tức mà không cần qua requirements.txt
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "streamlit-camera-input-live", "opencv-python-headless"])
+    # Ép máy chủ tải và cài đặt tất cả thư viện cần thiết ngay tại thời điểm runtime
+    subprocess.check_call([
+        sys.executable, "-m", "pip", "install", 
+        "streamlit-camera-input-live", 
+        "opencv-python-headless", 
+        "streamlit-cookies-manager"
+    ])
+    # Tải lại hệ thống sau khi cài đặt thành công
+    import streamlit as st
     from streamlit_camera_input_live import camera_input_live
+    from streamlit_cookies_manager import EncryptedCookieManager
 
-import streamlit as st
 import requests
 from datetime import datetime, date
 from zoneinfo import ZoneInfo
 import time
 import hashlib
-from streamlit_cookies_manager import EncryptedCookieManager
 from PIL import Image
 import cv2
 import numpy as np
 
 # =====================================================
-# CẤU HÌNH
+# CẤU HÌNH HỆ THỐNG
 # =====================================================
 def normalize_role(role_str: str) -> str:
     """Chuẩn hóa role về dạng không dấu, không khoảng trắng để so sánh an toàn."""
@@ -42,7 +51,7 @@ DANH_SACH_CONG_DOAN = [
 ]
 
 # =====================================================
-# PAGE CONFIG & CSS
+# PAGE CONFIG & CSS INTERFACE
 # =====================================================
 st.set_page_config(page_title="Hệ Thống Quét QR Xưởng", layout="wide", initial_sidebar_state="collapsed")
 
@@ -74,7 +83,7 @@ html, body, [class*="css"] { font-family: 'IBM Plex Sans', sans-serif; backgroun
 """, unsafe_allow_html=True)
 
 # =====================================================
-# API FUNCTIONS & QR DECODER (DÙNG OPENCV NGUYÊN BẢN)
+# API FUNCTIONS & QR DECODER (OPENCV NATIVE)
 # =====================================================
 DATA_CACHE_TTL = 86400
 
@@ -147,17 +156,8 @@ def do_login(user: str, password: str):
         pass
     return None
 
-def search_qr_log(query: str):
-    try:
-        resp = requests.get(WEB_APP_URL, params={"action":"search","query":query.strip()}, timeout=15)
-        if resp.status_code == 200:
-            return resp.json().get("results", [])
-    except Exception:
-        pass
-    return None
-
 # =====================================================
-# SESSION STATE
+# INITIAL STATE & SESSION HANDLER
 # =====================================================
 defaults = {
     "logged_in":          False,
@@ -181,8 +181,6 @@ defaults = {
     "prefill_nguoibao":   "",
     "prefill_congdoan":   "",
     "prefill_soluong":    "",
-    "search_query":       "",
-    "search_results":     [],
     "cookie_checked":     False,
     "current_role":       "",   
 }
@@ -213,7 +211,7 @@ if st.session_state.get("logged_in") is not True:
         except Exception:
             pass
 
-# Trang đăng nhập
+# Giao diện Trang Đăng Nhập
 if not st.session_state.logged_in:
     st.markdown('<div style="text-align:center; margin-top:60px;"><div style="font-family:\'IBM Plex Mono\',monospace; font-size:1.6rem; color:#00e5a0; letter-spacing:4px;">⚙ HỆ THỐNG QR</div></div>', unsafe_allow_html=True)
     _, col_center, _ = st.columns([1, 1.2, 1])
@@ -242,7 +240,7 @@ if not st.session_state.logged_in:
         st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
-# Header thông tin user
+# Header thông tin tài khoản làm việc
 col_h1, col_h2 = st.columns([3,1])
 with col_h1:
     st.markdown('<div class="sys-header"><div class="sys-header-left"><div class="dot"></div><h1>⚙ Hệ Thống Quét QR Xưởng</h1></div></div>', unsafe_allow_html=True)
@@ -279,7 +277,7 @@ with col_scan:
     else:
         st.markdown('<div class="card"><div class="card-title">📷 CAMERA QUÉT MÃ QR TRỰC TIẾP</div>', unsafe_allow_html=True)
         
-        # Gọi luồng video camera trực tiếp độ trễ thấp
+        # Kích hoạt mở luồng Camera trực tiếp từ Streamlit
         image_capture = camera_input_live(key=f"live_cam_{st.session_state.form_key}")
         
         if image_capture:
@@ -296,7 +294,7 @@ with col_scan:
             st.success(f"✅ Đang chọn mã: **{st.session_state.lookup_headcode}**")
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # Form điền dữ liệu tiến độ
+        # Form điền dữ liệu tiến độ sản xuất
         st.markdown('<div class="card"><div class="card-title">📝 Thông tin thao tác</div>', unsafe_allow_html=True)
         
         if st.session_state.lookup_result and st.session_state.lookup_result.get("status") == "found":
