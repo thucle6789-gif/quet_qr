@@ -11,7 +11,21 @@ from streamlit_cookies_manager import EncryptedCookieManager
 # =====================================================
 # CẤU HÌNH
 # =====================================================
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwsuFMJiwHs9fKrljvllFsZs1TXvLadY2upoHm0dfp4sXcHVuesjYkoQl7oIjxHNkF6LA/exec"
+def normalize_role(role_str: str) -> str:
+    """Chuẩn hóa role về dạng không dấu, không khoảng trắng để so sánh an toàn.
+       'SẢN XUẤT' / 'san xuat' / 'sản xuất' → 'sanxuat'
+       'NGƯỜI XEM' / 'nguoi xem' / 'người xem' → 'nguoixem'
+    """
+    import unicodedata
+    s = role_str.strip().lower()
+    # Bỏ dấu tiếng Việt
+    s = unicodedata.normalize('NFD', s)
+    s = ''.join(c for c in s if unicodedata.category(c) != 'Mn')
+    # Bỏ khoảng trắng
+    s = s.replace(' ', '')
+    return s  # 'sanxuat' hoặc 'nguoixem' hoặc ''
+
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycby1wv7X459Jr_w5X0JgMTHWkZKOhHCDH6WkhWHzmleyI1hnTCWkxXIKASXCt7jA5ThZqQ/exec"
 VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 DANH_SACH_CONG_DOAN = [
@@ -284,8 +298,8 @@ with col_h1:
         </div>
     </div>""", unsafe_allow_html=True)
 with col_h2:
-    _role_label = "🏭 SẢN XUẤT" if st.session_state.current_role == "sản xuất" else "👁 NGƯỜI XEM"
-    _role_color = "#00e5a0" if st.session_state.current_role == "sản xuất" else "#f59e0b"
+    _role_label = "🏭 SẢN XUẤT" if normalize_role(st.session_state.current_role) == "sanxuat" else "👁 NGƯỜI XEM"
+    _role_color = "#00e5a0" if normalize_role(st.session_state.current_role) == "sanxuat" else "#f59e0b"
     st.markdown(f"""
     <div style="padding:18px 0; text-align:right; display:flex; gap:8px; justify-content:flex-end; align-items:center;">
         <span class="user-badge">👤 {st.session_state.current_ten}</span>
@@ -358,7 +372,7 @@ col_scan, col_active = st.columns([1.1, 0.9], gap="large")
 # ─────────────────────────────────────────────────
 with col_scan:
     # ── Kiểm tra quyền ──
-    _is_san_xuat = st.session_state.current_role == "sản xuất"
+    _is_san_xuat = normalize_role(st.session_state.current_role) == "sanxuat"
 
     if not _is_san_xuat:
         st.markdown("""
