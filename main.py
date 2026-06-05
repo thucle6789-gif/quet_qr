@@ -2,12 +2,13 @@ import streamlit as st
 import requests
 import cv2
 import numpy as np
-from streamlit_qrcode_scanner import qrcode_scanner
 from datetime import datetime, date
 from zoneinfo import ZoneInfo
 import time
 import hashlib
-from streamlit_cookies_manager import EncryptedCookieManager
+import json
+from streamlit_js_eval import streamlit_js_eval
+from streamlit_qrcode_scanner import qrcode_scanner
 
 # =====================================================
 # CẤU HÌNH
@@ -41,14 +42,46 @@ DANH_SACH_CONG_DOAN = [
 st.set_page_config(page_title="Hệ Thống Quét QR Xưởng", layout="wide", initial_sidebar_state="collapsed")
 
 # =====================================================
-# COOKIE CONTROLLER — lưu session đăng nhập theo ngày
+# HÀM LƯU / ĐỌC ĐĂNG NHẬP QUA localStorage (JS)
+# Dùng streamlit_js_eval — ổn định trên mọi browser/mobile
 # =====================================================
-cookie = EncryptedCookieManager(
-    prefix="qr_system/",
-    password="qr-xuong-san-xuat-2024"
-)
-if not cookie.ready():
-    st.stop()
+LS_KEY = "qr_login_v2"
+
+def save_login_local(user, ten, role):
+    """Lưu thông tin đăng nhập vào localStorage của browser, hết hạn sau 30 ngày."""
+    payload = json.dumps({
+        "user": user, "ten": ten, "role": role,
+        "saved_ts": int(time.time())
+    })
+    streamlit_js_eval(
+        js_expressions=f'localStorage.setItem("{LS_KEY}", {json.dumps(payload)})',
+        key="save_login_js"
+    )
+
+def clear_login_local():
+    """Xóa thông tin đăng nhập khỏi localStorage."""
+    streamlit_js_eval(
+        js_expressions=f'localStorage.removeItem("{LS_KEY}")',
+        key="clear_login_js"
+    )
+
+def read_login_local():
+    """Đọc thông tin đăng nhập từ localStorage. Trả về dict hoặc None."""
+    raw = streamlit_js_eval(
+        js_expressions=f'localStorage.getItem("{LS_KEY}")',
+        key="read_login_js"
+    )
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+        # Kiểm tra hạn 30 ngày
+        age_days = (time.time() - data.get("saved_ts", 0)) / 86400
+        if age_days > 30:
+            return None
+        return data
+    except Exception:
+        return None
 
 # CSS toàn cục (luôn load — cần thiết cho cả trang login lẫn app)
 st.markdown("""
@@ -191,45 +224,19 @@ for k, v in defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
-# GUARD + COOKIE RESTORE
-# CookieController cần 1 render cycle để đọc được cookie từ browser.
-# Dùng "cookie_checked" để biết đã qua cycle đó chưa.
-if st.session_state.get("logged_in") is not True:
-    st.session_state["logged_in"] = False
-
-    if not st.session_state.get("cookie_checked"):
-        # Lần đầu load: render 1 spinner rỗng để trigger cookie hydration,
-        # đánh dấu đã check, rồi rerun để lần sau đọc được giá trị thật.
-        st.session_state["cookie_checked"] = True
-        with st.spinner(""):
-            pass
-        st.rerun()
-    else:
-        # Lần thứ 2 trở đi: cookie đã sẵn sàng, đọc bình thường
-        try:
-            saved_user = cookie.get("qr_user", "") or ""
-            saved_ten  = cookie.get("qr_ten",  "") or ""
-            saved_date = cookie.get("qr_date", "") or ""
-            saved_role = cookie.get("qr_role", "") or ""
-            # Duy trì đăng nhập 30 ngày
-            if saved_user and saved_ten and saved_date:
-                try:
-                    saved_dt = datetime.strptime(saved_date, "%Y-%m-%d")
-                    expired  = (datetime.now() - saved_dt).days > 30
-                except Exception:
-                    expired = True
-            else:
-                expired = True
-            if saved_user and saved_ten and not expired:
-                st.session_state.logged_in          = True
-                st.session_state.current_user       = saved_user
-                st.session_state.current_ten        = saved_ten
-                st.session_state.current_role       = saved_role
-                st.session_state.nguoibao_val       = saved_ten
-                st.session_state.active_jobs_loaded = False
-                st.rerun()
-        except Exception:
-            pass
+# =====================================================
+# GUARD + localStorage RESTORE
+# Đọc localStorage ngay từ đầu — không cần rerun cycle
+# =====================================================
+if not st.session_state.get("logged_in"):
+    saved = read_login_local()
+    if saved and saved.get("user") and saved.get("ten"):
+        st.session_state.logged_in          = True
+        st.session_state.current_user       = saved["user"]
+        st.session_state.current_ten        = saved["ten"]
+        st.session_state.current_role       = saved.get("role", "")
+        st.session_state.nguoibao_val       = saved["ten"]
+        st.session_state.active_jobs_loaded = False
 
 # =====================================================
 # TRANG ĐĂNG NHẬP — chặn toàn bộ nội dung phía dưới nếu chưa login
@@ -264,16 +271,11 @@ if not st.session_state.logged_in:
                 with st.spinner("Đang xác thực..."):
                     result = do_login(user_input.strip(), pass_input.strip())
                 if result and result.get("status") == "ok":
-                    _user  = result.get("user", user_input.strip())
-                    _ten   = result.get("ten",  user_input.strip())
-                    _role  = result.get("role", "").strip().lower()
-                    _today = date.today().strftime("%Y-%m-%d")
-                    # Lưu cookie (hết hạn sau 1 ngày)
-                    cookie["qr_user"] = _user
-                    cookie["qr_ten"]  = _ten
-                    cookie["qr_role"] = _role
-                    cookie["qr_date"] = _today
-                    cookie.save()
+                    _user = result.get("user", user_input.strip())
+                    _ten  = result.get("ten",  user_input.strip())
+                    _role = result.get("role", "").strip().lower()
+                    # Lưu vào localStorage 30 ngày
+                    save_login_local(_user, _ten, _role)
                     st.session_state.logged_in          = True
                     st.session_state.current_user       = _user
                     st.session_state.current_ten        = _ten
@@ -396,17 +398,31 @@ with col_scan:
         </div>""", unsafe_allow_html=True)
 
     if _is_san_xuat:
-        # Camera — dùng qrcode_scanner quét realtime, không cần chụp ảnh
+        # Camera — bật/tắt bằng nút, quét realtime không cần chụp ảnh
         st.markdown('<div class="card"><div class="card-title">📷 Quét mã QR</div>', unsafe_allow_html=True)
-        qr_result = qrcode_scanner(key=f"qr_scanner_{st.session_state.form_key}")
-        if qr_result and qr_result != st.session_state.qr_detected:
-            st.session_state.qr_detected     = qr_result
-            st.session_state.headcode_val    = qr_result
-            result = lookup_in_cache(qr_result)
-            st.session_state.lookup_headcode = qr_result
-            st.session_state.lookup_result   = result
-            st.session_state.form_key += 1
-            st.rerun()
+
+        # Nút bật/tắt camera
+        if not st.session_state.get("scanner_open", False):
+            if st.button("📷 Mở camera quét QR", use_container_width=True,
+                         key=f"open_cam_{st.session_state.form_key}"):
+                st.session_state.scanner_open = True
+                st.rerun()
+        else:
+            if st.button("✖️ Đóng camera", use_container_width=True,
+                         key=f"close_cam_{st.session_state.form_key}"):
+                st.session_state.scanner_open = False
+                st.rerun()
+            # QR scanner realtime — chỉ render khi đang mở
+            qr_result = qrcode_scanner(key=f"qr_scanner_{st.session_state.form_key}")
+            if qr_result and qr_result != st.session_state.qr_detected:
+                st.session_state.qr_detected     = qr_result
+                st.session_state.headcode_val    = qr_result
+                result = lookup_in_cache(qr_result)
+                st.session_state.lookup_headcode = qr_result
+                st.session_state.lookup_result   = result
+                st.session_state.scanner_open    = False  # Tự đóng camera sau khi quét
+                st.session_state.form_key += 1
+                st.rerun()
 
     if st.session_state.lookup_result and st.session_state.lookup_result.get("status") == "found":
         r = st.session_state.lookup_result
