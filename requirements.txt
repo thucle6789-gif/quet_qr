@@ -4,4 +4,3 @@ opencv-python-headless
 numpy
 Pillow
 streamlit-cookies-manager
-streamlit-qrcode-scanner
