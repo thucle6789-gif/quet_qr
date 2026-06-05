@@ -645,7 +645,13 @@ with col_active:
                     label_visibility="visible")
             with c_nhap_gio:
                 st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
-                if st.button("📥 Nhập giờ", key=f"nhap_gio_{jk}", use_container_width=True):
+                _gio_submitted = st.session_state.get(f"gio_submitted_{jk}", False)
+                if st.button(
+                    "✔ Đã ghi" if _gio_submitted else "📥 Nhập giờ",
+                    key=f"nhap_gio_{jk}",
+                    use_container_width=True,
+                    disabled=_gio_submitted,
+                ):
                     # Kiểm tra đúng người trước khi nhập giờ
                     job_nguoi   = job["nguoibao"].strip().lower()
                     login_nguoi = st.session_state.current_ten.strip().lower()
@@ -666,6 +672,8 @@ with col_active:
                     if val_hc is None and val_tc is None:
                         st.warning("⚠️ Vui lòng nhập ít nhất 1 giá trị giờ công.")
                     else:
+                        # Chặn double-submit ngay lập tức
+                        st.session_state[f"gio_submitted_{jk}"] = True
                         row_id = job.get("row_id", "")
                         payload_gio = {
                             "action":   "update_gio_cong",
@@ -679,13 +687,15 @@ with col_active:
                         with st.spinner("Đang ghi giờ công..."):
                             ok, resp = call_api(payload_gio)
                         if ok and resp.get("status") == "ok":
-                            # Xóa ô sau khi ghi thành công → tránh bấm nhầm lần 2
-                            st.session_state[f"gio_hc_{jk}"] = ""
-                            st.session_state[f"gio_tc_{jk}"] = ""
+                            # Xóa ô + reset flag sau khi ghi thành công
+                            st.session_state[f"gio_hc_{jk}"]       = ""
+                            st.session_state[f"gio_tc_{jk}"]       = ""
+                            st.session_state[f"gio_submitted_{jk}"] = False
                             st.session_state.form_key += 1
-                            st.success(f"✅ Đã ghi: HC={val_hc or '-'} | TC={val_tc or '-'}")
                             st.rerun()
                         else:
+                            # Ghi thất bại → mở lại nút
+                            st.session_state[f"gio_submitted_{jk}"] = False
                             st.error(f"Lỗi: {resp.get('message','Không rõ')}")
 
             # Cảnh báo sai người nhập giờ
