@@ -26,7 +26,7 @@ def normalize_role(role_str: str) -> str:
     s = s.replace(' ', '')
     return s  # 'sanxuat' hoặc 'nguoixem' hoặc ''
 
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxNM2zKT1TWBbUMpTPg9VuwPk15L8qRbPr1isu6oKmRe7vKqCQ8PC5Fl3Qoi2GVZ9g32Q/exec"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbw5TM8n2_GvTdmvhQA6zaWoWgnkyaSMk6DYINlSHKfOM6-2tSgqPjWc1ICiIyhMvTs_2Q/exec"
 VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 DANH_SACH_CONG_DOAN = [
@@ -688,13 +688,20 @@ with col_active:
                             ok, resp = call_api(payload_gio)
                         if ok and resp.get("status") == "ok":
                             # Xóa ô + reset flag sau khi ghi thành công
-                            st.session_state[f"gio_hc_{jk}"]       = ""
-                            st.session_state[f"gio_tc_{jk}"]       = ""
+                            st.session_state[f"gio_hc_{jk}"]        = ""
+                            st.session_state[f"gio_tc_{jk}"]        = ""
+                            st.session_state[f"gio_submitted_{jk}"] = False
+                            st.session_state.form_key += 1
+                            st.rerun()
+                        elif resp.get("status") == "duplicate":
+                            # Server phát hiện ghi trùng → xóa ô, không ghi thêm
+                            st.session_state[f"gio_hc_{jk}"]        = ""
+                            st.session_state[f"gio_tc_{jk}"]        = ""
                             st.session_state[f"gio_submitted_{jk}"] = False
                             st.session_state.form_key += 1
                             st.rerun()
                         else:
-                            # Ghi thất bại → mở lại nút
+                            # Lỗi thật → mở lại nút cho thử lại
                             st.session_state[f"gio_submitted_{jk}"] = False
                             st.error(f"Lỗi: {resp.get('message','Không rõ')}")
 
