@@ -26,7 +26,7 @@ def normalize_role(role_str: str) -> str:
     s = s.replace(' ', '')
     return s  # 'sanxuat' hoặc 'nguoixem' hoặc ''
 
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbz1zS1BZ-QDinnLEdtA6c4zYuF-CA6qWkaHPlh69fOOuXUFWZ0EuCAUqs3xNl3ExFZnpg/exec"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxNM2zKT1TWBbUMpTPg9VuwPk15L8qRbPr1isu6oKmRe7vKqCQ8PC5Fl3Qoi2GVZ9g32Q/exec"
 VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 DANH_SACH_CONG_DOAN = [
@@ -315,8 +315,9 @@ with col_h1:
         </div>
     </div>""", unsafe_allow_html=True)
 with col_h2:
-    _role_label = "🏭 SẢN XUẤT" if normalize_role(st.session_state.current_role) == "sanxuat" else "👁 NGƯỜI XEM"
-    _role_color = "#00e5a0" if normalize_role(st.session_state.current_role) == "sanxuat" else "#f59e0b"
+    _norm = normalize_role(st.session_state.current_role)
+    _role_label = "🏭 SẢN XUẤT" if _norm == "sanxuat" else "👁 NGƯỜI XEM"
+    _role_color = "#00e5a0"     if _norm == "sanxuat" else "#f59e0b"
     st.markdown(f"""
     <div style="padding:18px 0; text-align:right; display:flex; gap:8px; justify-content:flex-end; align-items:center;">
         <span class="user-badge">👤 {st.session_state.current_ten}</span>
