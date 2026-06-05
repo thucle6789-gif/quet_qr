@@ -26,7 +26,7 @@ def normalize_role(role_str: str) -> str:
     s = s.replace(' ', '')
     return s  # 'sanxuat' hoặc 'nguoixem' hoặc ''
 
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwPIyVOdXATs1d5h_sKhb72-cltRvOTlvp7TQ3I9Bj-C8lKRRNUYeCnCBl2_MpZMTQUNg/exec"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbz1zS1BZ-QDinnLEdtA6c4zYuF-CA6qWkaHPlh69fOOuXUFWZ0EuCAUqs3xNl3ExFZnpg/exec"
 VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 DANH_SACH_CONG_DOAN = [
@@ -619,18 +619,71 @@ with col_active:
         st.markdown('<p style="color:#64748b; font-size:0.85rem; font-family:IBM Plex Mono,monospace;">— Chưa có công việc nào —</p>', unsafe_allow_html=True)
     else:
         for jk, job in list(active_jobs.items()):
-            c_info, c_btn = st.columns([3,1])
-            with c_info:
-                st.markdown(f"""
-                <div class="job-row">
-                    <div class="job-headcode">{job['headcode']}</div>
-                    <div class="job-meta">{job['congdoan']}</div>
-                    <div class="job-meta">👤 {job['nguoibao']} | 📦 {job.get('soluong',0)}</div>
-                    <div class="job-meta" style="color:#64748b;font-size:0.72rem;">🕐 {job['gio_bat_dau']}</div>
-                </div>""", unsafe_allow_html=True)
-            with c_btn:
+            # ── Thông tin job ──
+            st.markdown(f"""
+            <div class="job-row">
+                <div class="job-headcode">{job['headcode']}</div>
+                <div class="job-meta">{job['congdoan']}</div>
+                <div class="job-meta">👤 {job['nguoibao']} | 📦 {job.get('soluong',0)}</div>
+                <div class="job-meta" style="color:#64748b;font-size:0.72rem;">🕐 {job['gio_bat_dau']}</div>
+            </div>""", unsafe_allow_html=True)
+
+            # ── Hàng 1: Giờ HC + Giờ TC + Nút Nhập Giờ ──
+            c_hc, c_tc, c_nhap_gio = st.columns([1, 1, 1])
+            with c_hc:
+                gio_hc = st.text_input("⏱ Giờ HC",
+                    value=st.session_state.get(f"gio_hc_{jk}", ""),
+                    placeholder="0.00",
+                    key=f"inp_hc_{jk}_{st.session_state.form_key}",
+                    label_visibility="visible")
+            with c_tc:
+                gio_tc = st.text_input("🌙 Giờ TC",
+                    value=st.session_state.get(f"gio_tc_{jk}", ""),
+                    placeholder="0.00",
+                    key=f"inp_tc_{jk}_{st.session_state.form_key}",
+                    label_visibility="visible")
+            with c_nhap_gio:
+                st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+                if st.button("📥 Nhập giờ", key=f"nhap_gio_{jk}", use_container_width=True):
+                    # Parse giá trị
+                    try:
+                        val_hc = float(str(gio_hc).replace(",",".")) if str(gio_hc).strip() else None
+                    except ValueError:
+                        val_hc = None
+                    try:
+                        val_tc = float(str(gio_tc).replace(",",".")) if str(gio_tc).strip() else None
+                    except ValueError:
+                        val_tc = None
+
+                    if val_hc is None and val_tc is None:
+                        st.warning("⚠️ Vui lòng nhập ít nhất 1 giá trị giờ công.")
+                    else:
+                        row_id = job.get("row_id", "")
+                        payload_gio = {
+                            "action":   "update_gio_cong",
+                            "row_id":   row_id,
+                            "headcode": job["headcode"],
+                            "congdoan": job["congdoan"],
+                            "nguoibao": job["nguoibao"],
+                            "gio_hc":   val_hc,
+                            "gio_tc":   val_tc,
+                        }
+                        with st.spinner("Đang ghi giờ công..."):
+                            ok, resp = call_api(payload_gio)
+                        if ok and resp.get("status") == "ok":
+                            # Lưu lại giá trị vừa nhập để hiển thị
+                            if val_hc is not None:
+                                st.session_state[f"gio_hc_{jk}"] = str(val_hc)
+                            if val_tc is not None:
+                                st.session_state[f"gio_tc_{jk}"] = str(val_tc)
+                            st.success(f"✅ Đã ghi: HC={val_hc or '-'} | TC={val_tc or '-'}")
+                        else:
+                            st.error(f"Lỗi: {resp.get('message','Không rõ')}")
+
+            # ── Hàng 2: Nút Xong ──
+            c_xong, _ = st.columns([1, 2])
+            with c_xong:
                 if st.button("✅ Xong", key=f"finish_btn_{jk}", use_container_width=True):
-                    # Kiểm tra người thực hiện có khớp với người đang đăng nhập không
                     job_nguoi   = job["nguoibao"].strip().lower()
                     login_nguoi = st.session_state.current_ten.strip().lower()
                     if job_nguoi != login_nguoi:
@@ -643,9 +696,10 @@ with col_active:
                         st.session_state.prefill_congdoan = job["congdoan"]
                         st.session_state.prefill_soluong  = str(sl) if sl != "" else ""
                     st.rerun()
-                # Hiển thị cảnh báo nếu sai người
                 if st.session_state.get(f"owner_err_{jk}"):
-                    st.warning("⚠️ Mã hàng này không phải mã hàng bạn đang thực hiện")
+                    st.warning("⚠️ Không phải mã của bạn")
+
+            st.markdown("<hr style='border-color:#2a3045;margin:4px 0 12px 0'>", unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
     # Hướng dẫn
