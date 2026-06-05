@@ -679,12 +679,12 @@ with col_active:
                         with st.spinner("Đang ghi giờ công..."):
                             ok, resp = call_api(payload_gio)
                         if ok and resp.get("status") == "ok":
-                            # Lưu lại giá trị vừa nhập để hiển thị
-                            if val_hc is not None:
-                                st.session_state[f"gio_hc_{jk}"] = str(val_hc)
-                            if val_tc is not None:
-                                st.session_state[f"gio_tc_{jk}"] = str(val_tc)
+                            # Xóa ô sau khi ghi thành công → tránh bấm nhầm lần 2
+                            st.session_state[f"gio_hc_{jk}"] = ""
+                            st.session_state[f"gio_tc_{jk}"] = ""
+                            st.session_state.form_key += 1
                             st.success(f"✅ Đã ghi: HC={val_hc or '-'} | TC={val_tc or '-'}")
+                            st.rerun()
                         else:
                             st.error(f"Lỗi: {resp.get('message','Không rõ')}")
 
