@@ -4,4 +4,3 @@ opencv-python-headless
 numpy
 Pillow
 streamlit-qrcode-scanner
-streamlit-js-eval
