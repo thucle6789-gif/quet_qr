@@ -26,7 +26,7 @@ def normalize_role(role_str: str) -> str:
     s = s.replace(' ', '')
     return s  # 'sanxuat' hoặc 'nguoixem' hoặc ''
 
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycby1wv7X459Jr_w5X0JgMTHWkZKOhHCDH6WkhWHzmleyI1hnTCWkxXIKASXCt7jA5ThZqQ/exec"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwPIyVOdXATs1d5h_sKhb72-cltRvOTlvp7TQ3I9Bj-C8lKRRNUYeCnCBl2_MpZMTQUNg/exec"
 VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 DANH_SACH_CONG_DOAN = [
