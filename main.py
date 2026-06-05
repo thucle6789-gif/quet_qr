@@ -646,6 +646,13 @@ with col_active:
             with c_nhap_gio:
                 st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
                 if st.button("📥 Nhập giờ", key=f"nhap_gio_{jk}", use_container_width=True):
+                    # Kiểm tra đúng người trước khi nhập giờ
+                    job_nguoi   = job["nguoibao"].strip().lower()
+                    login_nguoi = st.session_state.current_ten.strip().lower()
+                    if job_nguoi != login_nguoi:
+                        st.session_state[f"gio_err_{jk}"] = True
+                        st.rerun()
+
                     # Parse giá trị
                     try:
                         val_hc = float(str(gio_hc).replace(",",".")) if str(gio_hc).strip() else None
@@ -680,6 +687,11 @@ with col_active:
                             st.success(f"✅ Đã ghi: HC={val_hc or '-'} | TC={val_tc or '-'}")
                         else:
                             st.error(f"Lỗi: {resp.get('message','Không rõ')}")
+
+            # Cảnh báo sai người nhập giờ
+            if st.session_state.get(f"gio_err_{jk}"):
+                st.warning("⚠️ Mã hàng này không phải mã bạn đang làm")
+                st.session_state.pop(f"gio_err_{jk}", None)
 
             # ── Hàng 2: Nút Xong ──
             c_xong, _ = st.columns([1, 2])
