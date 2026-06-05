@@ -7,7 +7,6 @@ from zoneinfo import ZoneInfo
 import time
 import hashlib
 import json
-from streamlit_js_eval import streamlit_js_eval
 from streamlit_qrcode_scanner import qrcode_scanner
 
 # =====================================================
@@ -42,44 +41,53 @@ DANH_SACH_CONG_DOAN = [
 st.set_page_config(page_title="Hệ Thống Quét QR Xưởng", layout="wide", initial_sidebar_state="collapsed")
 
 # =====================================================
-# HÀM LƯU / ĐỌC ĐĂNG NHẬP QUA localStorage (JS)
-# Dùng streamlit_js_eval — ổn định trên mọi browser/mobile
+# QUẢN LÝ SESSION QUA st.query_params
+# Python đọc query_params đồng bộ ngay lần render đầu tiên
+# Token = hashlib của user+ten+secret, lưu trong URL ?t=TOKEN&u=USER&n=TEN&r=ROLE&ts=TS
 # =====================================================
-LS_KEY = "qr_login_v2"
+SESSION_SECRET = "qr-xuong-2024-secret"
 
-def save_login_local(user, ten, role):
-    """Lưu thông tin đăng nhập vào localStorage của browser, hết hạn sau 30 ngày."""
-    payload = json.dumps({
-        "user": user, "ten": ten, "role": role,
-        "saved_ts": int(time.time())
+def make_token(user: str, ten: str, ts: int) -> str:
+    raw = f"{user}|{ten}|{ts}|{SESSION_SECRET}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:24]
+
+def save_session(user: str, ten: str, role: str):
+    """Ghi session vào query_params — browser lưu trong URL, reload vẫn còn."""
+    ts    = int(time.time())
+    token = make_token(user, ten, ts)
+    st.query_params.update({
+        "t":  token,
+        "u":  user,
+        "n":  ten,
+        "r":  role,
+        "ts": str(ts),
     })
-    streamlit_js_eval(
-        js_expressions=f'localStorage.setItem("{LS_KEY}", {json.dumps(payload)})',
-        key="save_login_js"
-    )
 
-def clear_login_local():
-    """Xóa thông tin đăng nhập khỏi localStorage."""
-    streamlit_js_eval(
-        js_expressions=f'localStorage.removeItem("{LS_KEY}")',
-        key="clear_login_js"
-    )
+def clear_session():
+    """Xóa toàn bộ query_params khi đăng xuất."""
+    st.query_params.clear()
 
-def read_login_local():
-    """Đọc thông tin đăng nhập từ localStorage. Trả về dict hoặc None."""
-    raw = streamlit_js_eval(
-        js_expressions=f'localStorage.getItem("{LS_KEY}")',
-        key="read_login_js"
-    )
-    if not raw:
-        return None
+def read_session():
+    """
+    Đọc session từ query_params — đồng bộ, không cần JS.
+    Trả về dict {user, ten, role} hoặc None nếu không hợp lệ / hết hạn.
+    """
     try:
-        data = json.loads(raw)
-        # Kiểm tra hạn 30 ngày
-        age_days = (time.time() - data.get("saved_ts", 0)) / 86400
-        if age_days > 30:
+        p     = st.query_params
+        token = p.get("t",  "")
+        user  = p.get("u",  "")
+        ten   = p.get("n",  "")
+        role  = p.get("r",  "")
+        ts    = int(p.get("ts", "0"))
+        if not all([token, user, ten, ts]):
             return None
-        return data
+        # Kiểm tra hạn 30 ngày
+        if (time.time() - ts) > 30 * 86400:
+            return None
+        # Kiểm tra token hợp lệ
+        if make_token(user, ten, ts) != token:
+            return None
+        return {"user": user, "ten": ten, "role": role}
     except Exception:
         return None
 
@@ -217,7 +225,6 @@ defaults = {
     "prefill_soluong":    "",
     "search_query":       "",
     "search_results":     [],
-    "cookie_checked":     False,
     "current_role":       "",   # "sản xuất" | "người xem"
 }
 for k, v in defaults.items():
@@ -225,12 +232,11 @@ for k, v in defaults.items():
         st.session_state[k] = v
 
 # =====================================================
-# GUARD + localStorage RESTORE
-# Đọc localStorage ngay từ đầu — không cần rerun cycle
+# GUARD + QUERY PARAMS RESTORE — đồng bộ, không cần JS timing
 # =====================================================
 if not st.session_state.get("logged_in"):
-    saved = read_login_local()
-    if saved and saved.get("user") and saved.get("ten"):
+    saved = read_session()
+    if saved:
         st.session_state.logged_in          = True
         st.session_state.current_user       = saved["user"]
         st.session_state.current_ten        = saved["ten"]
@@ -274,8 +280,8 @@ if not st.session_state.logged_in:
                     _user = result.get("user", user_input.strip())
                     _ten  = result.get("ten",  user_input.strip())
                     _role = result.get("role", "").strip().lower()
-                    # Lưu vào localStorage 30 ngày
-                    save_login_local(_user, _ten, _role)
+                    # Lưu session vào query_params (đồng bộ, 30 ngày)
+                    save_session(_user, _ten, _role)
                     st.session_state.logged_in          = True
                     st.session_state.current_user       = _user
                     st.session_state.current_ten        = _ten
@@ -319,15 +325,7 @@ with col_h2:
                      font-family:'IBM Plex Mono',monospace;">{_role_label}</span>
     </div>""", unsafe_allow_html=True)
     if st.button("🚪 Đăng xuất", use_container_width=True):
-        # Xóa cookie khi đăng xuất
-        try:
-            cookie["qr_user"] = ""
-            cookie["qr_ten"]  = ""
-            cookie["qr_role"] = ""
-            cookie["qr_date"] = ""
-            cookie.save()
-        except Exception:
-            pass
+        clear_session()   # Xóa query_params
         for k in list(st.session_state.keys()):
             del st.session_state[k]
         st.rerun()
