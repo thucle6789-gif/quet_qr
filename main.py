@@ -26,7 +26,7 @@ def normalize_role(role_str: str) -> str:
     s = s.replace(' ', '')
     return s  # 'sanxuat' hoặc 'nguoixem' hoặc ''
 
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxLw8paMxGgRHzNGUHUlABe8NNcOa-bs8XVQbdkS5-8QT1KTSOs_O0jXEmdeKv53t-SHg/exec"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxlKMWInen88heEukPdgFWjNVPBX7cmimmLRBfHIIQZvTcGh55Xds6LgP-_wEENEd0IaQ/exec"
 VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 DANH_SACH_CONG_DOAN = [
@@ -326,11 +326,51 @@ with col_h2:
                      padding:6px 14px; font-size:0.75rem; color:{_role_color};
                      font-family:'IBM Plex Mono',monospace;">{_role_label}</span>
     </div>""", unsafe_allow_html=True)
-    if st.button("🚪 Đăng xuất", use_container_width=True):
-        clear_session()   # Xóa query_params
-        for k in list(st.session_state.keys()):
-            del st.session_state[k]
-        st.rerun()
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        if st.button("🔑 Đổi mật khẩu", use_container_width=True):
+            st.session_state.show_change_pass = not st.session_state.show_change_pass
+            st.rerun()
+    with col_btn2:
+        if st.button("🚪 Đăng xuất", use_container_width=True):
+            clear_session()
+            for k in list(st.session_state.keys()):
+                del st.session_state[k]
+            st.rerun()
+
+    # ── Form đổi mật khẩu (hiện/ẩn theo toggle) ──
+    if st.session_state.get("show_change_pass"):
+        with st.form("form_change_pass", clear_on_submit=True):
+            st.markdown("""
+            <div style="background:#1a1f2e; border:1px solid #00e5a0; border-radius:8px;
+                        padding:12px 16px; margin-bottom:8px;">
+                <div style="font-family:'IBM Plex Mono',monospace; color:#00e5a0;
+                            font-size:0.7rem; letter-spacing:2px;">🔑 ĐỔI MẬT KHẨU</div>
+            </div>""", unsafe_allow_html=True)
+            old_pass  = st.text_input("Mật khẩu hiện tại", type="password", key="cp_old")
+            new_pass  = st.text_input("Mật khẩu mới", type="password", key="cp_new")
+            new_pass2 = st.text_input("Xác nhận mật khẩu mới", type="password", key="cp_new2")
+            submit_cp = st.form_submit_button("💾 Xác nhận đổi", use_container_width=True)
+
+        if submit_cp:
+            if not old_pass or not new_pass or not new_pass2:
+                st.error("Vui lòng điền đầy đủ thông tin.")
+            elif new_pass != new_pass2:
+                st.error("❌ Mật khẩu mới không khớp.")
+            elif len(new_pass) < 4:
+                st.error("❌ Mật khẩu mới phải có ít nhất 4 ký tự.")
+            elif new_pass == old_pass:
+                st.error("❌ Mật khẩu mới phải khác mật khẩu cũ.")
+            else:
+                with st.spinner("Đang cập nhật..."):
+                    result = api_change_password(
+                        st.session_state.current_user, old_pass, new_pass)
+                if result.get("status") == "ok":
+                    st.success("✅ Đổi mật khẩu thành công!")
+                    st.session_state.show_change_pass = False
+                    st.rerun()
+                else:
+                    st.error(f"❌ {result.get('message', 'Lỗi không xác định')}")
 
 # =====================================================
 # LOAD INIT DATA (lần đầu)
