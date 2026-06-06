@@ -26,7 +26,7 @@ def normalize_role(role_str: str) -> str:
     s = s.replace(' ', '')
     return s  # 'sanxuat' hoặc 'nguoixem' hoặc ''
 
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbw5TM8n2_GvTdmvhQA6zaWoWgnkyaSMk6DYINlSHKfOM6-2tSgqPjWc1ICiIyhMvTs_2Q/exec"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycby-wT3S8nSobD0IgwHXw01ZQl9UPJlWJcqR0y3pXHfyFgkoyXl5HMwJEVZUZo22QTDN/exec"
 VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 DANH_SACH_CONG_DOAN = [
@@ -652,11 +652,16 @@ with col_active:
                     use_container_width=True,
                     disabled=_gio_submitted,
                 ):
-                    # Kiểm tra đúng người trước khi nhập giờ
+                    # ✅ Set flag NGAY ĐẦU TIÊN trước mọi xử lý
+                    # → mọi lần bấm tiếp theo trong cùng render cycle đều bị chặn
+                    st.session_state[f"gio_submitted_{jk}"] = True
+
+                    # Kiểm tra đúng người
                     job_nguoi   = job["nguoibao"].strip().lower()
                     login_nguoi = st.session_state.current_ten.strip().lower()
                     if job_nguoi != login_nguoi:
-                        st.session_state[f"gio_err_{jk}"] = True
+                        st.session_state[f"gio_err_{jk}"]        = True
+                        st.session_state[f"gio_submitted_{jk}"]  = False
                         st.rerun()
 
                     # Parse giá trị
@@ -670,10 +675,9 @@ with col_active:
                         val_tc = None
 
                     if val_hc is None and val_tc is None:
+                        st.session_state[f"gio_submitted_{jk}"] = False
                         st.warning("⚠️ Vui lòng nhập ít nhất 1 giá trị giờ công.")
                     else:
-                        # Chặn double-submit ngay lập tức
-                        st.session_state[f"gio_submitted_{jk}"] = True
                         row_id = job.get("row_id", "")
                         payload_gio = {
                             "action":   "update_gio_cong",
@@ -687,21 +691,18 @@ with col_active:
                         with st.spinner("Đang ghi giờ công..."):
                             ok, resp = call_api(payload_gio)
                         if ok and resp.get("status") == "ok":
-                            # Xóa ô + reset flag sau khi ghi thành công
                             st.session_state[f"gio_hc_{jk}"]        = ""
                             st.session_state[f"gio_tc_{jk}"]        = ""
                             st.session_state[f"gio_submitted_{jk}"] = False
                             st.session_state.form_key += 1
                             st.rerun()
                         elif resp.get("status") == "duplicate":
-                            # Server phát hiện ghi trùng → xóa ô, không ghi thêm
                             st.session_state[f"gio_hc_{jk}"]        = ""
                             st.session_state[f"gio_tc_{jk}"]        = ""
                             st.session_state[f"gio_submitted_{jk}"] = False
                             st.session_state.form_key += 1
                             st.rerun()
                         else:
-                            # Lỗi thật → mở lại nút cho thử lại
                             st.session_state[f"gio_submitted_{jk}"] = False
                             st.error(f"Lỗi: {resp.get('message','Không rõ')}")
 
