@@ -26,7 +26,7 @@ def normalize_role(role_str: str) -> str:
     s = s.replace(' ', '')
     return s  # 'sanxuat' hoặc 'nguoixem' hoặc ''
 
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxLw8paMxGgRHzNGUHUlABe8NNcOa-bs8XVQbdkS5-8QT1KTSOs_O0jXEmdeKv53t-SHg/exec"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxB9cagxYoxM8kpbLtkFGKoQ6SND4QNqLbPTwFR1fs0bNUH-KNDFSaYtrTxKJ8VadEv8g/exec"
 VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 DANH_SACH_CONG_DOAN = [
@@ -210,6 +210,7 @@ defaults = {
     "headcode_val":       "",
     "nguoibao_val":       "",
     "congdoan_val":       DANH_SACH_CONG_DOAN[0],
+    "congdoan_tiep_val":  "",
     "soluong_val":        "",
     "form_key":           0,
     "active_jobs":        {},
@@ -445,14 +446,29 @@ with col_scan:
             <div style="color:#e0e0e0; margin-top:4px;"><b>Sản phẩm:</b> {r.get('ten_san_pham','')}</div>
         </div>""", unsafe_allow_html=True)
 
-    # ── Công đoạn (ngoài form, realtime) ──
+    # ── Công đoạn hiện tại ──
     _cd_key = f"_congdoan_{st.session_state.form_key}"
     def on_congdoan_change():
-        st.session_state.congdoan_val = st.session_state[_cd_key]
-    st.selectbox("Công đoạn *", options=DANH_SACH_CONG_DOAN,
+        st.session_state.congdoan_val      = st.session_state[_cd_key]
+        st.session_state.congdoan_tiep_val = ""
+    st.selectbox("Công đoạn hiện tại *", options=DANH_SACH_CONG_DOAN,
         index=DANH_SACH_CONG_DOAN.index(st.session_state.congdoan_val)
               if st.session_state.congdoan_val in DANH_SACH_CONG_DOAN else 0,
         key=_cd_key, on_change=on_congdoan_change)
+
+    # ── Công đoạn tiếp theo (loại trừ công đoạn hiện tại) ──
+    _cd_tiep_opts = ["-- Chọn công đoạn tiếp theo --"] + [
+        cd for cd in DANH_SACH_CONG_DOAN if cd != st.session_state.congdoan_val
+    ]
+    _cd_tiep_key = f"_congdoan_tiep_{st.session_state.form_key}"
+    def on_cd_tiep_change():
+        v = st.session_state[_cd_tiep_key]
+        st.session_state.congdoan_tiep_val = "" if v.startswith("--") else v
+    _tiep_idx = 0
+    if st.session_state.congdoan_tiep_val in _cd_tiep_opts:
+        _tiep_idx = _cd_tiep_opts.index(st.session_state.congdoan_tiep_val)
+    st.selectbox("Công đoạn tiếp theo *", options=_cd_tiep_opts,
+        index=_tiep_idx, key=_cd_tiep_key, on_change=on_cd_tiep_change)
 
     # ── Người vận hành: hiển thị readonly (từ tài khoản đăng nhập) ──
     st.text_input("Người vận hành", value=st.session_state.current_ten,
@@ -538,10 +554,14 @@ with col_scan:
             st.session_state.lookup_result = None; st.session_state.form_key += 1
             st.rerun()
         else:
+            congdoan_tiep = st.session_state.congdoan_tiep_val.strip()
             job_key   = f"{headcode}|{congdoan}|{nguoibao.lower()}"
             is_active = job_key in st.session_state.active_jobs
 
-            if not is_active:
+            # Bắt buộc chọn công đoạn tiếp theo khi HOÀN THÀNH
+            if is_active and not congdoan_tiep:
+                st.error("❌ Vui lòng chọn Công đoạn tiếp theo trước khi hoàn thành.")
+            elif not is_active:
                 payload = {"action":"start","headcode":headcode,"congdoan":congdoan,
                            "soluong":soluong,"nguoibao":nguoibao}
                 with st.spinner("Đang ghi nhận bắt đầu..."):
@@ -563,7 +583,7 @@ with col_scan:
                     st.session_state.form_key += 1; st.rerun()
                 else:
                     st.error(f"Lỗi: {resp_data.get('message','Không rõ')}")
-            else:
+            elif is_active:
                 job_info = st.session_state.active_jobs[job_key]
                 payload  = {"action":"finish","headcode":headcode,"congdoan":congdoan,
                             "congdoan_tiep": congdoan_tiep,
