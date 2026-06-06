@@ -329,7 +329,7 @@ with col_h2:
     col_btn1, col_btn2 = st.columns(2)
     with col_btn1:
         if st.button("🔑 Đổi mật khẩu", use_container_width=True):
-            st.session_state.show_change_pass = not st.session_state.show_change_pass
+            st.session_state.show_change_pass = not st.session_state.get("show_change_pass", False)
             st.rerun()
     with col_btn2:
         if st.button("🚪 Đăng xuất", use_container_width=True):
