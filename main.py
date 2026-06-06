@@ -169,6 +169,21 @@ def call_api(payload):
     except Exception as ex:
         return False, {"message": str(ex)}
 
+def api_change_password(user: str, old_pass: str, new_pass: str):
+    """Đổi mật khẩu người dùng qua Apps Script."""
+    try:
+        resp = requests.post(WEB_APP_URL, json={
+            "action":   "change_password",
+            "user":     user,
+            "old_pass": old_pass,
+            "new_pass": new_pass,
+        }, timeout=10)
+        if resp.status_code == 200:
+            return resp.json()
+    except Exception as ex:
+        return {"status": "error", "message": str(ex)}
+    return {"status": "error", "message": "Không thể kết nối"}
+
 def lookup_in_cache(headcode: str):
     init = fetch_init_data()
     if init is None:
