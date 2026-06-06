@@ -26,7 +26,7 @@ def normalize_role(role_str: str) -> str:
     s = s.replace(' ', '')
     return s  # 'sanxuat' hoặc 'nguoixem' hoặc ''
 
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycby-wT3S8nSobD0IgwHXw01ZQl9UPJlWJcqR0y3pXHfyFgkoyXl5HMwJEVZUZo22QTDN/exec"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxB9cagxYoxM8kpbLtkFGKoQ6SND4QNqLbPTwFR1fs0bNUH-KNDFSaYtrTxKJ8VadEv8g/exec"
 VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 DANH_SACH_CONG_DOAN = [
@@ -566,6 +566,7 @@ with col_scan:
             else:
                 job_info = st.session_state.active_jobs[job_key]
                 payload  = {"action":"finish","headcode":headcode,"congdoan":congdoan,
+                            "congdoan_tiep": congdoan_tiep,
                             "soluong":soluong,"nguoibao":nguoibao,
                             "gio_bat_dau":job_info["gio_bat_dau"],
                             "gio_hoan_thanh":datetime.now(VN_TZ).strftime("%d/%m/%Y %H:%M:%S"),
@@ -577,7 +578,8 @@ with col_scan:
                     st.session_state.last_action = {"type":"finish","headcode":headcode,"congdoan":congdoan}
                     st.session_state.qr_detected = ""; st.session_state.headcode_val = ""
                     st.session_state.lookup_headcode = ""; st.session_state.lookup_result = None
-                    st.session_state.soluong_val = ""; st.session_state.form_key += 1
+                    st.session_state.soluong_val = ""; st.session_state.congdoan_tiep_val = ""
+                    st.session_state.form_key += 1
                     st.rerun()
                 else:
                     st.error(f"Lỗi: {resp_data.get('message','Không rõ')}")
