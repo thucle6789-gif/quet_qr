@@ -26,7 +26,7 @@ def normalize_role(role_str: str) -> str:
     s = s.replace(' ', '')
     return s  # 'sanxuat' hoặc 'nguoixem' hoặc ''
 
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxlKMWInen88heEukPdgFWjNVPBX7cmimmLRBfHIIQZvTcGh55Xds6LgP-_wEENEd0IaQ/exec"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbz5-wxqgsgvEHCM5wgakFaNYz_M3IezI8_PzuiZg_-0Buo77wPI6Upq3k50YOM5cF7XdA/exec"
 VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 DANH_SACH_CONG_DOAN = [
@@ -617,8 +617,16 @@ with col_scan:
             if is_active and not congdoan_tiep:
                 st.error("❌ Vui lòng chọn Công đoạn tiếp theo trước khi hoàn thành.")
             elif not is_active:
-                payload = {"action":"start","headcode":headcode,"congdoan":congdoan,
-                           "soluong":soluong,"nguoibao":nguoibao}
+                _lr = st.session_state.lookup_result or {}
+                payload = {
+                    "action":          "start",
+                    "headcode":        headcode,
+                    "ten_cong_trinh":  _lr.get("ten_cong_trinh", ""),
+                    "ten_san_pham":    _lr.get("ten_san_pham", ""),
+                    "congdoan":        congdoan,
+                    "soluong":         soluong,
+                    "nguoibao":        nguoibao,
+                }
                 with st.spinner("Đang ghi nhận bắt đầu..."):
                     ok, resp_data = call_api(payload)
                 if ok and resp_data.get("status") == "ok":
